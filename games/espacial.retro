@@ -1,0 +1,211 @@
+; ===============================================
+; espacial.retro — shoot-em-up con scroll infinito.
+;   Cubre: starfield procedural con M0..M3 (parallax),
+;          múltiples actores (player + 4 enemigos + bala),
+;          ALE para spawn aleatorio reproducible,
+;          colisiones, cooldown de disparo, score y vidas.
+;   Controles: ← → mover, Z disparar.
+; ===============================================
+
+JUEGO Espacial
+AUTOR Demo
+VERSION 1
+
+; --- Sprites ---------------------------------
+
+SPRITE 1 8x8
+00088000
+00088000
+0CCCCCC0
+0CCCCCC0
+0CCCCCC0
+0C0CC0C0
+00808080
+00080800
+
+SPRITE 2 8x8
+00800800
+08888880
+88888888
+88800888
+88888888
+80888008
+00888800
+00800800
+
+SPRITE 4 8x8
+00088000
+00088000
+00088000
+00088000
+00088000
+00088000
+00000000
+00000000
+
+; --- Sonidos ---------------------------------
+
+SONIDO 0
+ONDA PUL
+PUL 4
+ENV 0,1,8,1
+NOTA SOL5 1
+NOTA DO5 1
+FIN
+
+SONIDO 1
+ONDA SIE
+ENV 0,3,4,3
+NOTA DO4 4
+NOTA SOL3 4
+FIN
+
+SONIDO 2
+ONDA SIE
+ENV 0,5,0,5
+NOTA DO3 12
+NOTA FA2 12
+FIN
+
+PROGRAMA
+10 EN INICIOJUEGO IR 90
+20 EN INICIONIVEL IR 200
+30 EN CUADRO IR 100
+
+; --- INICIOJUEGO -----------------------------
+90 LLA 600
+92 PAT 0,1
+94 LIM 0,0,176,312,176
+96 VID=3:Z=0
+98 RET
+
+; --- INICIONIVEL ------------------------------
+200 MOV 0,156,176
+210 PAR I=8 A 11
+215 PAT I,2:OCU I,1
+220 SIG
+225 PAT 12,4:OCU 12,1
+230 C=30:T=0:PUN=0
+235 RET
+
+; --- CUADRO ----------------------------------
+100 SI Z<>0 ENT 800
+105 BOR 0
+110 LLA 300
+115 LLA 350
+120 LLA 400
+125 LLA 450
+130 LLA 490
+135 LLA 520
+140 LLA 580
+145 RET
+
+; --- starfield update + draw -----------------
+300 PAR I=0 A 23
+305 M1(I)+=M2(I)
+310 SI M1(I)>199 ENT LLA 320
+315 PIN M0(I),M1(I),M3(I)
+317 SIG
+318 RET
+320 M1(I)=0
+322 M0(I)=ALE(320)
+324 M2(I)=1+ALE(3)
+326 M3(I)=5+ALE(3)
+328 RET
+
+; --- player input + shoot --------------------
+350 D=BTN(1)-BTN(0)
+355 VEL 0,D*3,0
+360 T-=1
+362 SI T<0 ENT T=0
+364 SI BTN(4) Y T=0 ENT LLA 700
+370 RET
+
+; --- bullet move + cull ----------------------
+400 SI VIS(12)=0 ENT 415
+405 SI Y(12)<0 ENT OCU 12,1
+415 RET
+
+; --- enemy spawn (cooldown C) ----------------
+450 C-=1
+452 SI C>0 ENT 485
+454 C=24+ALE(24)
+456 F=0
+458 PAR I=8 A 11
+460 SI F<>0 ENT 463
+461 SI VIS(I)=0 ENT LLA 470
+463 SIG
+465 RET
+470 MOV I,16+ALE(280),0
+472 VEL I,0,1+ALE(2)
+474 F=1
+478 RET
+485 RET
+
+; --- enemy cull (Y > 200) --------------------
+490 PAR I=8 A 11
+493 SI VIS(I)=0 ENT 502
+495 SI Y(I)>200 ENT OCU I,1
+502 SIG
+505 RET
+
+; --- collisions: bullet × enemy, player × enemy
+520 SI VIS(12)=0 ENT 545
+525 PAR I=8 A 11
+527 SI VIS(I)=0 ENT 535
+530 SI COL(12,I) ENT LLA 560
+535 SIG
+545 PAR I=8 A 11
+547 SI VIS(I)=0 ENT 553
+549 SI COL(0,I) ENT LLA 570
+553 SIG
+555 RET
+560 OCU I,1:OCU 12,1
+562 PUN+=1:SON 0,0
+565 RET
+570 OCU I,1:VID-=1
+572 SON 1,1
+574 SI VID<=0 ENT LLA 750
+576 RET
+
+; --- HUD --------------------------------------
+580 TXT 8,4,"P",7
+582 SI PUN=0 ENT 591
+584 PAR I=1 A PUN%10
+586 REC 24+I*5,4,4,8,11
+588 SIG
+591 TXT 200,4,"V",7
+593 SI VID<=0 ENT 599
+595 PAR I=1 A VID
+597 REC 216+I*8,4,6,8,8
+598 SIG
+599 RET
+
+; --- shoot bullet (single) -------------------
+700 SI VIS(12) ENT 720
+705 MOV 12,X(0),Y(0)-6
+710 VEL 12,0,-6
+715 T=8
+720 RET
+
+; --- game over (ese 590 antes chocaba con HUD) ---
+750 Z=1:SON 2,2
+755 RET
+
+; --- starfield init ---------------------------
+600 PAR I=0 A 23
+605 M0(I)=ALE(320)
+610 M1(I)=ALE(200)
+615 M2(I)=1+ALE(3)
+617 M3(I)=5+ALE(3)
+620 SIG
+625 RET
+
+; --- game over overlay ------------------------
+800 LLA 580
+810 TXT 96,80,"GAME OVER",8
+815 TXT 80,100,"PUN: ",7
+820 PAR I=1 A PUN%100
+822 REC 120+I*2,103,1,4,11
+824 SIG
+826 RET

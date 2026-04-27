@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>RetroVM — IDE</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="ide-header">
+      <h1>RetroVM</h1>
+      <nav class="ide-doclinks">
+        <a href="/docs/REFERENCIA.md" target="_blank">Referencia</a>
+        <a href="/docs/TUTORIAL.md" target="_blank">Tutorial</a>
+        <a href="/docs/PLAN.md" target="_blank">Plan</a>
+      </nav>
+    </header>
+
+    <div class="ide-toolbar">
+      <label class="ide-tool-group">
+        Ejemplo
+        <select id="example-select"></select>
+      </label>
+      <button id="open-file" type="button" title="Abrir archivo .retro">Abrir...</button>
+      <button id="save-file" type="button" title="Descargar .retro">Guardar</button>
+      <span class="ide-sep"></span>
+      <button id="run" type="button" class="ide-primary" title="Ctrl/Cmd+Enter">▶ Correr</button>
+      <button id="pause" type="button" title="Esc">⏸</button>
+      <button id="step" type="button" title="Avanzar 1 cuadro (Ctrl/Cmd+.)">⏭ Paso</button>
+      <button id="reset" type="button" title="Volver al estado inicial">↻ Reset</button>
+      <button id="export-png" type="button" title="Descargar PNG del cuadro actual">📷 PNG</button>
+      <span class="ide-sep"></span>
+      <button id="open-lib"        type="button" title="Ctrl/Cmd+L">📚 Librería</button>
+      <button id="open-pal-editor" type="button" title="Ctrl/Cmd+Shift+L · editor de paletas">🎨 Paleta</button>
+      <button id="open-spr-editor" type="button" title="Ctrl/Cmd+Shift+P · editor de sprites">🖼 Sprite</button>
+      <button id="open-snd-editor" type="button" title="Ctrl/Cmd+Shift+N · editor de sonidos">🔊 Sonido</button>
+      <span class="ide-sep"></span>
+      <label class="ide-tool-group" title="Seed del PRNG (ALE)">
+        Seed
+        <input id="seed" type="number" value="305419896" min="1" />
+      </label>
+    </div>
+
+    <main class="ide-main">
+      <section id="editor" class="ide-editor"></section>
+      <aside class="ide-canvas-pane">
+        <canvas id="screen" width="320" height="200"></canvas>
+        <dl id="hud" class="ide-hud">
+          <dt>Estado</dt><dd id="hud-status">esperando ▶ Correr</dd>
+          <dt>CUA</dt><dd id="hud-cua">0</dd>
+          <dt>PUN</dt><dd id="hud-pun">0</dd>
+          <dt>NIV</dt><dd id="hud-niv">0</dd>
+        </dl>
+        <p class="ide-help">
+          ← → ↑ ↓ moverse · <kbd>Z</kbd> A · <kbd>X</kbd> B · <kbd>Esc</kbd> pausa<br>
+          <small>El audio arranca con el primer gesto del usuario.</small>
+        </p>
+      </aside>
+    </main>
+
+    <footer id="diagnostics" class="ide-diagnostics" aria-live="polite"></footer>
+
+    <input id="file-input" type="file" accept=".retro" hidden />
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

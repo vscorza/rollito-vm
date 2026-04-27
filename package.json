@@ -1,0 +1,32 @@
+{
+  "name": "retro-vm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Una máquina virtual estilo revista de juegos de los 80 para el navegador.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run --project default",
+    "test:watch": "vitest",
+    "test:perf": "vitest run --project perf --reporter=verbose",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/lint": "^6.9.5",
+    "@codemirror/search": "^6.7.0",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.41.1",
+    "codemirror": "^6.0.2",
+    "marked": "^18.0.2"
+  }
+}

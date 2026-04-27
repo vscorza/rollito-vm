@@ -1,0 +1,111 @@
+; ===============================================
+; serpiente.retro — ejemplo canónico #5 (reference game)
+;   Snake clásico en grilla 32x20 (celdas 8x8 sobre 320x200).
+;   Cubre: arreglos M0/M1 como ringbuffer, ALE, sonido,
+;          velocidad capada vía CUA%V, GAME OVER con TXT.
+;   Controles: ← → ↑ ↓ para girar la serpiente.
+; ===============================================
+
+JUEGO Serpiente
+AUTOR Demo
+VERSION 1
+
+SONIDO 0
+ONDA PUL
+PUL 6
+ENV 0,1,12,2
+NOTA SOL5 2
+NOTA DO6 3
+FIN
+
+SONIDO 1
+ONDA SIE
+ENV 0,4,0,4
+NOTA DO3 8
+NOTA FA2 12
+FIN
+
+PROGRAMA
+10 EN INICIOJUEGO IR 90
+20 EN CUADRO IR 100
+
+; --- INICIOJUEGO: estado inicial -------------
+;   Cuerpo arranca en (15..17, 10), largo 3, dir derecha.
+;   M0(i)=col, M1(i)=fila, ringbuffer 0..255.
+90 M0(0)=15:M1(0)=10
+92 M0(1)=16:M1(1)=10
+94 M0(2)=17:M1(2)=10
+96 T=0:H=2:L=3
+98 D=1:V=8:Z=0
+99 LLA 800
+
+; --- CUADRO ----------------------------------
+100 BOR 0
+102 TXT 8,4,"PUNTOS",7
+104 SI PUN=0 ENT 110
+106 PAR I=1 A PUN%10
+108 REC 64+I*5,4,4,8,11
+109 SIG
+110 SI Z=1 ENT 130
+115 LLA 200
+120 SI CUA%V<>0 ENT 130
+125 LLA 300
+130 LLA 400
+135 LLA 460
+140 SI Z=0 ENT 150
+145 TXT 96,80,"GAME OVER",8
+150 RET
+
+; --- input dir (sin reversa 180) -------------
+200 SI BTN(0) Y D<>1 ENT D=3
+205 SI BTN(1) Y D<>3 ENT D=1
+210 SI BTN(2) Y D<>2 ENT D=0
+215 SI BTN(3) Y D<>0 ENT D=2
+220 RET
+
+; --- avance (cabeza nueva + colisión + comer) -
+300 A=M0(H):B=M1(H)
+305 SI D=0 ENT B-=1
+310 SI D=1 ENT A+=1
+315 SI D=2 ENT B+=1
+320 SI D=3 ENT A-=1
+325 SI A<0 O A>31 ENT 380
+330 SI B<0 O B>19 ENT 380
+335 PAR I=0 A L-1
+340 J=(T+I)%256
+345 SI M0(J)=A Y M1(J)=B ENT Z=1
+350 SIG
+355 SI Z=1 ENT 380
+360 H=(H+1)%256
+365 M0(H)=A:M1(H)=B
+370 SI A=F Y B=G ENT 390
+372 T=(T+1)%256
+375 RET
+380 Z=1:SON 1,1
+385 RET
+390 L+=1:PUN+=1:SON 0,0
+392 LLA 800
+394 RET
+
+; --- spawn food (ALE, evita cuerpo) ----------
+800 F=ALE(32)
+805 G=ALE(20)
+810 PAR I=0 A L-1
+815 J=(T+I)%256
+820 SI M0(J)=F Y M1(J)=G ENT 800
+825 SIG
+830 RET
+
+; --- dibujo cuerpo ---------------------------
+400 PAR I=0 A L-1
+405 J=(T+I)%256
+410 X=32+M0(J)*8
+412 Y=20+M1(J)*8
+415 REC X,Y,8,8,11
+420 SIG
+425 RET
+
+; --- dibujo comida ---------------------------
+460 X=32+F*8:Y=20+G*8
+465 REC X,Y,8,8,8
+470 RET

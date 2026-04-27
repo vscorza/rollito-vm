@@ -1,0 +1,50 @@
+; ===============================================
+; pelota.retro — ejemplo canónico #1
+;   Una bola rebota contra los 4 bordes con sonido.
+;   Cubre: EN INICIOJUEGO/CUADRO, MOV, VEL, INV, COL implícita por bordes,
+;   sonido procedural simple.
+; ===============================================
+
+JUEGO Pelota
+AUTOR Demo
+VERSION 1
+
+SPRITE 0 8x8
+00888800
+08888880
+88888888
+88888888
+88888888
+88888888
+08888880
+00888800
+
+SONIDO 0
+ONDA PUL
+PUL 8
+ENV 0,2,8,2
+NOTA SOL5 2
+NOTA DO6 2
+FIN
+
+PROGRAMA
+10 EN INICIOJUEGO IR 90
+20 EN CUADRO IR 100
+
+90 MOV 0,160,100
+92 VEL 0,2,1
+94 RET
+
+100 BOR 5
+110 SI X(0)<0 ENT LLA 200
+115 SI X(0)>312 ENT LLA 200
+120 SI Y(0)<0 ENT LLA 220
+125 SI Y(0)>192 ENT LLA 220
+130 RET
+
+200 INV 0,X
+205 SON 0,0
+210 RET
+220 INV 0,Y
+225 SON 0,0
+230 RET

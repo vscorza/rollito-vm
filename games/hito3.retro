@@ -1,0 +1,25 @@
+; ===============================================
+; hito3.retro — demo del Hito 3 del VM:
+; - EN CUADRO IR n           (event hook)
+; - BOR / REC                (drawing builtins)
+; - PAR / SIG                (loop)
+; - SI / ENT / SINO          (conditional)
+; - asignaciones y CUA       (special var)
+; ===============================================
+
+JUEGO HitoTres
+AUTOR Demo
+VERSION 1
+
+PROGRAMA
+10 EN CUADRO IR 100
+
+; --- handler CUADRO -------------------------------
+100 BOR 0
+105 PAR I=0 A 15
+110 REC I*20,30,20,40,I
+115 SIG
+120 A=CUA%280
+130 SI A>200 ENT B=11 SINO B=8
+140 REC A,90,40,20,B
+150 RET

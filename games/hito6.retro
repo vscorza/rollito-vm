@@ -1,0 +1,105 @@
+; ===============================================
+; hito6.retro — plataformer con audio:
+;   SONIDO n / ONDA / ENV / NOTA / FIN  bloques de audio
+;   SON n,c        reproduce sonido en canal tonal
+;   SIL c          silencia canal
+;   EN CANAL c     dispara handler al terminar el canal
+; ===============================================
+
+JUEGO PlatSon
+AUTOR Demo
+VERSION 1
+
+SPRITE 1 16x16
+6666666666666666
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6666666666666666
+
+SPRITE 2 8x8
+0CCCCCC0
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+0CCCCCC0
+
+MAPA 0 20x12
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000111100
+00000000000000000000
+00000111110000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+11111111111111111111
+
+; --- sonido 0: salto (arpegio ascendente corto) ---
+SONIDO 0
+ONDA PUL
+PUL 8
+ENV 0,2,8,2
+NOTA DO5 3
+NOTA SOL5 3
+NOTA DO6 3
+FIN
+
+; --- sonido 1: aterrizaje (thud grave, sierra) ----
+SONIDO 1
+ONDA SIE
+ENV 0,4,0,2
+NOTA DO3 6
+FIN
+
+PROGRAMA
+10 EN CUADRO IR 100
+
+; --- init en cuadro 0 ---------------------------
+100 SI CUA>0 ENT 130
+105 FON 0
+110 SOL 0,1
+115 PAT 0,2
+120 MOV 0,40,40
+125 GRA 0,0,1
+128 LIM 0,0,0,312,200
+
+; --- input + lógica ----------------------------
+130 D=BTN(1)-BTN(0)
+135 VEL 0,D*2,VY(0)
+140 SI BTN(4) ENT LLA 200
+145 LLA 250
+150 RET
+
+; --- subrutina: salto si pisa suelo ------------
+200 SI PIE(0)=0 ENT 220
+205 SAL 0,18
+210 SON 0,0
+220 RET
+
+; --- subrutina: detectar aterrizaje ------------
+;   P guarda el estado previo de PIE; pasaje 0→1 = aterrizó.
+250 G=PIE(0)
+255 SI G=1 Y P=0 ENT 270
+260 P=G
+265 RET
+270 SON 1,1
+275 P=G
+280 RET

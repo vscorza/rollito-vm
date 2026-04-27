@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs ls *)",
+      "Bash(npm test *)",
+      "Bash(npx vitest *)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' /Users/marianocerrutti/git_repo/rollito-vm/games/hito3.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' /Users/marianocerrutti/git_repo/rollito-vm/games/hito4.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' /Users/marianocerrutti/git_repo/rollito-vm/games/hito5.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' /Users/marianocerrutti/git_repo/rollito-vm/games/hito6.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' /Users/marianocerrutti/git_repo/rollito-vm/games/hito7.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/pelota.retro games/pong.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/pong.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/saltarin.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/memoria.retro)",
+      "Bash(node -e ' *)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/serpiente.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/mario-mini.retro)",
+      "Bash(node -e *)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/espacial.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && match\\($0,/^[[:space:]]*\\([0-9]+\\) /,m\\) { print m[1] }' games/espacial.retro)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && /^[[:space:]]*[0-9]+ /{ split\\($0, a, \" \"\\); print a[1] }' games/espacial.retro)",
+      "Bash(git config *)",
+      "Bash(echo \"Configurado: $\\(git config user.name\\) <$\\(git config user.email\\)>\")"
+    ]
+  }
+}

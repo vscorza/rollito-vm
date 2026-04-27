@@ -1,0 +1,129 @@
+; ===============================================
+; memoria.retro — ejemplo canónico #4
+;   Grilla 4x4 de cartas; revelá pares iguales para puntuar.
+;   Cubre: arreglos M0..M2, cursor con BTN, debounce con M2,
+;   ALE para mezcla, TXT para título y score, REC para cartas.
+;   Controles: ← → ↑ ↓ mover cursor, Z revelar.
+; ===============================================
+
+JUEGO Memoria
+AUTOR Demo
+VERSION 1
+
+PROGRAMA
+10 EN INICIOJUEGO IR 90
+20 EN CUADRO IR 100
+
+; --- INICIOJUEGO: arma 16 cartas (8 pares) ----
+90 LLA 700
+92 RET
+
+; --- CUADRO -----------------------------------
+100 BOR 0
+102 TXT 92,4,"MEMORIA",7
+105 LLA 220
+108 SI Z=1 ENT 115
+110 LLA 280
+115 LLA 500
+120 LLA 400
+125 LLA 460
+130 SI Z=0 ENT 145
+135 TXT 96,180,"GANASTE!",10
+145 RET
+
+; --- mover cursor (BTN 0..3 con debounce) ----
+220 PAR I=0 A 3
+222 N=BTN(I)
+224 SI N=1 Y M2(I)=0 ENT LLA 240
+226 M2(I)=N
+228 SIG
+230 RET
+
+240 SI I=0 ENT LLA 250
+242 SI I=1 ENT LLA 255
+244 SI I=2 ENT LLA 260
+246 SI I=3 ENT LLA 265
+248 RET
+250 SI C%4>0 ENT C-=1
+252 RET
+255 SI C%4<3 ENT C+=1
+257 RET
+260 SI C>3 ENT C-=4
+262 RET
+265 SI C<12 ENT C+=4
+267 RET
+
+; --- revelar carta (BTN 4 con debounce) ------
+280 N=BTN(4)
+282 SI N<>1 O M2(4)=1 ENT 290
+284 LLA 350
+290 M2(4)=N
+292 RET
+
+350 SI S=2 ENT 380
+355 SI M1(C)=1 ENT 380
+358 M1(C)=1
+360 SI S<>0 ENT 370
+365 F=C:S=1:RET
+370 SI C=F ENT 380
+375 LLA 600
+380 RET
+
+; --- check de match ---------------------------
+600 SI M0(F)<>M0(C) ENT 615
+605 PUN+=1:S=0
+610 SI PUN=8 ENT Z=1
+612 RET
+615 V=20:S=2:RET
+
+; --- countdown durante "S=2 mostrando" --------
+500 SI S<>2 ENT 520
+505 V-=1
+510 SI V<=0 ENT LLA 540
+515 RET
+520 RET
+540 M1(F)=0:M1(C)=0:S=0
+545 RET
+
+; --- dibujar cartas ---------------------------
+400 PAR I=0 A 15
+405 LLA 420
+410 SIG
+415 RET
+420 J=I%4
+422 K=I/4
+424 X=40+J*60
+425 Y=32+K*32
+427 SI M1(I)=1 ENT LLA 440
+430 REC X,Y,40,24,5
+432 RET
+440 REC X,Y,40,24,8+M0(I)
+442 RET
+
+; --- borde de cursor --------------------------
+460 J=C%4
+462 K=C/4
+464 X=40+J*60
+465 Y=32+K*32
+467 REC X,Y,40,1,7
+469 REC X,Y+23,40,1,7
+471 REC X,Y,1,24,7
+473 REC X+39,Y,1,24,7
+475 RET
+
+; --- init: pares + shuffle + reset estado ----
+700 PAR I=0 A 15
+705 M0(I)=I/2
+710 SIG
+715 PAR I=0 A 30
+720 J=ALE(16)
+722 K=ALE(16)
+725 N=M0(J)
+727 M0(J)=M0(K)
+729 M0(K)=N
+730 SIG
+735 PAR I=0 A 15
+740 M1(I)=0
+745 SIG
+750 C=0:S=0:Z=0
+755 RET

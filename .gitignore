@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.log
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/
+
+# Local plans del usuario / agente; no van al repo público.
+/.claude/plans/
+
+# Output de tasks (transcripciones del Agent tool en macOS).
+/tmp/

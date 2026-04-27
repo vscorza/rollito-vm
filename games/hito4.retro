@@ -1,0 +1,59 @@
+; ===============================================
+; hito4.retro — dos pelotas con colisión
+;   - SPRITE 0/1     definición textual de patrón 8x8
+;   - MOV / VEL      posición + velocidad
+;   - INV n,X|Y      rebote por eje
+;   - X(n), COL      consultas de actor
+; ===============================================
+
+JUEGO Pelotas
+AUTOR Demo
+VERSION 1
+
+SPRITE 0 8x8
+00888800
+08888880
+88888888
+88888888
+88888888
+88888888
+08888880
+00888800
+
+SPRITE 1 8x8
+0BBBBBB0
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+0BBBBBB0
+
+PROGRAMA
+10 EN CUADRO IR 100
+
+100 SI CUA>0 ENT 120
+105 MOV 0,80,90:VEL 0,2,1
+110 MOV 1,200,110:VEL 1,-2,-1
+
+120 BOR 5
+125 LLA 200
+130 SI COL(0,1) ENT 300
+140 RET
+
+; --- subrutina rebotes contra bordes -------------
+200 SI X(0)<0 ENT INV 0,X
+205 SI X(0)>312 ENT INV 0,X
+210 SI Y(0)<0 ENT INV 0,Y
+215 SI Y(0)>192 ENT INV 0,Y
+220 SI X(1)<0 ENT INV 1,X
+225 SI X(1)>312 ENT INV 1,X
+230 SI Y(1)<0 ENT INV 1,Y
+235 SI Y(1)>192 ENT INV 1,Y
+240 RET
+
+; --- sub: rebote bola-bola -----------------------
+300 INV 0,X:INV 1,X
+310 INV 0,Y:INV 1,Y
+320 RET

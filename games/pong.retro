@@ -1,0 +1,119 @@
+; ===============================================
+; pong.retro — ejemplo canónico #2
+;   2 paletas + bola con score visual (rectángulos).
+;   Cubre: 2 jugadores, BTN, COL, TXT, PUN, AI básica.
+;   Player izquierdo: W/S. Player derecho: AI lenta.
+; ===============================================
+
+JUEGO Pong
+AUTOR Demo
+VERSION 1
+
+SPRITE 0 8x16
+07777770
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+07777770
+
+SPRITE 2 8x8
+07777770
+77777777
+77777777
+77777777
+77777777
+77777777
+77777777
+07777770
+
+SONIDO 0
+ONDA PUL
+PUL 4
+ENV 0,1,12,2
+NOTA DO5 2
+FIN
+
+SONIDO 1
+ONDA SIE
+ENV 0,4,4,4
+NOTA DO3 8
+FIN
+
+PROGRAMA
+10 EN INICIOJUEGO IR 90
+20 EN CUADRO IR 100
+
+; --- INICIOJUEGO ----------------------------
+90 PAT 1,0
+92 MOV 0,8,90:MOV 1,304,90
+94 MOV 2,160,96:VEL 2,2,2
+96 RET
+
+; --- CUADRO ---------------------------------
+100 BOR 0
+105 LLA 200
+110 LLA 250
+115 LLA 300
+120 LLA 350
+125 TXT 116,4,"PONG",7
+130 LLA 400
+135 RET
+
+; --- player izq (W/S) -----------------------
+200 D=BTN(3)-BTN(2)
+205 VEL 0,0,D*3
+210 SI Y(0)<8 ENT MOV 0,8,8
+215 SI Y(0)>176 ENT MOV 0,8,176
+220 RET
+
+; --- AI derecha -----------------------------
+245 J=Y(2)+4
+246 K=Y(1)+8
+250 SI J>K ENT VEL 1,0,1
+255 SI J<K ENT VEL 1,0,-1
+260 SI Y(1)<8 ENT MOV 1,304,8
+265 SI Y(1)<177 ENT 270
+267 MOV 1,304,176
+270 RET
+
+; --- bola: rebote vs paletas/techo ----------
+300 SI COL(2,0) ENT LLA 320
+305 SI COL(2,1) ENT LLA 320
+310 SI Y(2)<0 ENT INV 2,Y
+315 SI Y(2)>192 ENT INV 2,Y
+318 RET
+320 INV 2,X:SON 0,0
+325 RET
+
+; --- gol ------------------------------------
+350 SI X(2)<0 ENT LLA 380
+355 SI X(2)>312 ENT LLA 390
+360 RET
+380 R+=1:SON 1,1
+385 MOV 2,160,96:VEL 2,2,2
+387 RET
+390 PUN+=1:SON 1,1
+395 MOV 2,160,96:VEL 2,-2,2
+397 RET
+
+; --- score visual (rectángulos) -------------
+400 SI PUN=0 ENT 420
+405 PAR I=1 A PUN%10
+410 REC 60+I*5,16,4,8,8
+415 SIG
+420 SI R=0 ENT 440
+425 PAR I=1 A R%10
+430 REC 200+I*5,16,4,8,11
+435 SIG
+440 RET
