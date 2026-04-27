@@ -872,10 +872,10 @@ Notas por región:
 - **CODE** contiene el bytecode emitido por el compilador como una
   vista `Uint32Array` sobre `vmRef.codeMem`. `LDM(addr)` en CODE
   devuelve el byte correspondiente del bytecode (útil para
-  introspección/disassembly). `STM` en CODE escribe al buffer pero el
-  intérprete no relee opcodes de un word ya fetcheado dentro del mismo
-  `runFromBytecode`; v2-B (self-mod consistente) requiere ajustes
-  adicionales.
+  introspección/disassembly). `STM` y `STW` en CODE muta el buffer
+  in-place; el intérprete relee `code[pc]` en cada fetch, así una
+  reescritura es **visible al próximo fetch** dentro del mismo handler
+  o en handlers siguientes (modelo: zero-instruction-cache).
 - **STATE** mapea vars (`Int32Array`), arrays M0..M7, stacks de loop/call,
   actores y `inputState.buttons/keys` a un layout flat. Se accede en
   little-endian. La escritura está permitida pero no chequea
@@ -954,9 +954,10 @@ archivos sin romper la API:
   words a `vmRef.codeMem`; `runFromBytecode` hace `fetch → decode →
   execute`. Cumple §18.1. Disassembler básico via `disasm()` en
   `bytecode.js`.
-- **v2-B — Self-modifying code**: con v2-A activo, `STM` en CODE ya
-  muta el buffer; queda especificar el modelo de visibilidad exacto
-  (re-fetch en cada salto vs. al próximo handler) y agregar tests.
+- **v2-B — Self-modifying code**: ✅ **incluido en v1**. El intérprete
+  relee `code[pc]` en cada fetch sin caching, así `STM`/`STW` en CODE
+  son visibles al próximo fetch (mismo handler o subsiguiente). Tests
+  en [tests/unit/memory.test.js](tests/unit/memory.test.js) "v2-B".
 - **v2-C — Modificación de sonidos byte a byte**: ✅ **incluido en v1**.
   `STR(SON, ...)` muta `sonMem` y marca el slot dirty; `SON n,c`
   re-deserializa desde los bytes antes de disparar. Layout flat en §18.4.

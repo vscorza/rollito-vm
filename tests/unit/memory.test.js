@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createVM } from '../../src/core/vm.js';
 import { MEM, REGION_PAL, REGION_SPR, REGION_MAP, REGION_SON } from '../../src/core/memory.js';
 import { VAR_INDEX } from '../../src/core/memory.js';
+import { OP, encode } from '../../src/core/bytecode.js';
 
 function step(vm) { vm.runFrame(); }
 
@@ -392,5 +393,64 @@ PROGRAMA
 `);
     expect(() => step(vm)).not.toThrow();
     expect(vm.synth.sounds[0].wave).toBe('PUL');
+  });
+});
+
+describe('v2-B: self-modifying code (STM/STW en CODE)', () => {
+  it('escritura directa a vmRef.code es visible al próximo runFrame', () => {
+    const vm = createVM(`PROGRAMA
+10 EN CUADRO IR 100
+100 A=42
+110 RET
+`);
+    const bcPc = vm.lineToIdx[100];
+    // Confirmar que la línea 100 arranca con LDI 42.
+    expect(vm.code[bcPc] & 0xff).toBe(OP.LDI);
+    expect(vm.code[bcPc] >> 8).toBe(42);
+    // Re-encodear como LDI 99 y correr.
+    vm.code[bcPc] = encode(OP.LDI, 99);
+    vm.runFrame();
+    expect(vm.state.vars[VAR_INDEX.A]).toBe(99);
+  });
+
+  it('STW dentro de un handler reescribe bytecode visible a una LLA posterior', () => {
+    const vm = createVM(`PROGRAMA
+10 EN CUADRO IR 50
+50 STW 0,0
+60 LLA 200
+70 RET
+200 A=42
+210 RET
+`);
+    // Calcular el byte address del primer word de la línea 200 y
+    // sustituir el placeholder 'STW 0,0' por uno que escribe LDI 99 ahí.
+    const targetWord = vm.lineToIdx[200];
+    const targetByteAddr = targetWord * 4;
+    const ldi99 = encode(OP.LDI, 99);
+    // Localizar la línea 50 — sabemos que es el 'STW 0,0' y reescribir
+    // los dos LDI inmediatamente anteriores al opcode STW (los args).
+    const stwPc = vm.lineToIdx[50];
+    // Layout de 'STW 0,0': LDI 0 (dst), LDI 0 (val), STW.
+    expect(vm.code[stwPc] & 0xff).toBe(OP.LDI);
+    expect(vm.code[stwPc + 1] & 0xff).toBe(OP.LDI);
+    expect(vm.code[stwPc + 2] & 0xff).toBe(OP.STW);
+    vm.code[stwPc]     = encode(OP.LDI, targetByteAddr);
+    vm.code[stwPc + 1] = encode(OP.LDI, ldi99);
+    vm.runFrame();
+    // Tras el STW, la línea 200 carga 99 en lugar de 42.
+    expect(vm.state.vars[VAR_INDEX.A]).toBe(99);
+  });
+
+  it('LDM(byteAddr) en CODE refleja el opcode + operand del bytecode', () => {
+    const vm = createVM(`PROGRAMA
+10 EN CUADRO IR 100
+100 A=LDM(0)
+110 B=LDM(1)
+115 RET
+`);
+    step(vm);
+    // El primer word emitido empieza con LDI (operand=0) → byte 0=0x10, byte 1=0x00.
+    expect(vm.state.vars[VAR_INDEX.A]).toBe(OP.LDI);
+    expect(vm.state.vars[VAR_INDEX.B]).toBe(0);
   });
 });
