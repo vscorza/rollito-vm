@@ -1002,18 +1002,26 @@ accedidos vía MMIO. El objetivo es FPGA económica (Lattice ECP5 25F,
 opcodes, ABI, MMIO, BRAM budget para ECP5, BOM estimado, y cobertura
 del transpilador v2-A → RVM-32.
 
-**Estado actual** (toolchain JS):
+**Estado actual** (toolchain JS — completo):
 - ✅ ISA tabla + encode/decode → [src/asm/rvm32-isa.js](src/asm/rvm32-isa.js)
 - ✅ Intérprete RVM-32 en JS → [src/asm/interpreter.js](src/asm/interpreter.js)
-- ✅ Transpilador v2-A → RVM-32 (subset aritmético + control flow) →
-  [src/asm/v2a-to-rvm32.js](src/asm/v2a-to-rvm32.js)
+- ✅ MMIO command bus → [src/asm/mmio.js](src/asm/mmio.js): registros
+  ARG0..ARG7 + CMD + RESULT en STATE+0x3100. Dispatcher rutea cada
+  comando a los helpers JS existentes (drawPattern, blitMap, playSound,
+  aabbCollide, readByteIndexed, etc.). DIV/MOD también via MMIO.
+- ✅ Transpilador v2-A → RVM-32 completo →
+  [src/asm/v2a-to-rvm32.js](src/asm/v2a-to-rvm32.js): cubre todos los
+  87 opcodes del bytecode v2-A (aritmética, control flow CALL/RET,
+  PAR/SIG, memoria absoluta, builtins via MMIO, queries via MMIO,
+  LDR/STR/MEMCPY/MEMSET via MMIO).
 - ✅ Extensiones gráficas v2-A: `SPRR n,x,y,ang,esc` (rot+scale,
-  nearest neighbor) y `SPRA n,x,y,a` (alpha blending via tabla) en
-  el bytecode existente. Habilita rotation/scale/alpha en la IDE web
-  sin tocar el RVM-32.
-- ❌ Transpilador completo (memoria absoluta, CALL/RET, PAR/SIG,
-  builtins via MMIO, queries) → trabajo posterior.
-- ❌ RTL Verilog / cosim contra HW → trabajo posterior.
+  nearest neighbor) y `SPRA n,x,y,a` (alpha blending via tabla).
+- ✅ Cosim de los 9 juegos del repo: vars match 100%, fb match
+  byte-a-byte (excepto espacial con diff <256 px por orden de ALE en
+  starfield procedural).
+- ✅ Plan RTL + container Docker → [docs/RTL-PLAN.md](RTL-PLAN.md) +
+  [hw/Dockerfile](../hw/Dockerfile) con Yosys + nextpnr-ecp5 +
+  Trellis + Verilator + cocotb.
 
 **Tests**:
 - [tests/unit/sprr-spra.test.js](tests/unit/sprr-spra.test.js) — 12
@@ -1023,7 +1031,13 @@ del transpilador v2-A → RVM-32.
 - [tests/unit/rvm32-interp.test.js](tests/unit/rvm32-interp.test.js) —
   11 tests del intérprete (ALU, branches, jumps, memoria).
 - [tests/unit/rvm32-transpile.test.js](tests/unit/rvm32-transpile.test.js)
-  — 8 tests de cosim contra v2-A (vars, aritmética, comparaciones,
-  arrays Mn, IF/ENT, IR).
+  — 20 tests de cosim contra v2-A (aritmética, comparaciones, arrays,
+  CALL/RET, PAR/SIG, memoria, builtins, queries).
+- [tests/integration/rvm32-games.test.js](tests/integration/rvm32-games.test.js)
+  — 9 tests cosim de juegos completos (pelota..tetris+espacial).
 
-Total v1: **+41 tests** sobre los existentes (290 totales).
+Total: **+62 tests** sobre los existentes (313 totales).
+
+**Próximo**: implementación RTL siguiendo el roadmap de
+[docs/RTL-PLAN.md](RTL-PLAN.md) §5 (CPU core → bus + MMIO → GPU →
+synth → scan-out → bring-up).

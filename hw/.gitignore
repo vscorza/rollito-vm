@@ -1,0 +1,8 @@
+build/
+*.bit
+*.cfg
+*.json
+*.vcd
+*.fst
+obj_dir/
+__pycache__/

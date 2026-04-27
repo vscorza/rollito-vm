@@ -39,40 +39,54 @@ import { OP } from '../core/bytecode.js';
 import {
   RVM_OP, encodeR, encodeI, encodeJ,
 } from './rvm32-isa.js';
-import { MEM, VAR_COUNT, ARRAY_SIZE } from '../core/memory.js';
+import { MEM, ARRAY_SIZE } from '../core/memory.js';
+import {
+  MMIO_ARG0, MMIO_CMD, MMIO_RESULT, CMD,
+} from './mmio.js';
 
 const VARS_BASE   = MEM.STATE.base;            // 0x08000
 const ARRAYS_BASE = MEM.STATE.base + 0x80;     // 0x08080
 const ESTACK_BASE = MEM.FREE.base + 0x40000;   // FREE + 256 KB → eval stack
+const LSTACK_BASE = MEM.FREE.base + 0x30000;   // FREE + 192 KB → loop stack
 
 // =====================================================================
 // Helpers internos del emisor.
 // =====================================================================
 
+// Carga un valor Int32 arbitrario a rd. Maneja correctamente valores
+// con bit 15 set en la mitad baja (que ORI/ADDI sign-extenderían
+// corrompiendo los bits altos). Usa R9 como scratch cuando hace falta.
 function loadImm32(out, rd, value) {
-  // Si imm cabe en 16-bit signed: ADDI rd, R0, imm.
-  if (value >= -0x8000 && value <= 0x7fff) {
-    out.push(encodeI(RVM_OP.ADDI, rd, 0, value));
+  const v = value | 0;
+  if (v >= -0x8000 && v <= 0x7fff) {
+    out.push(encodeI(RVM_OP.ADDI, rd, 0, v));
     return;
   }
-  // Si cabe en 32-bit no-negativo: LUI + ORI o LUI + ADDI.
-  const hi = (value >>> 16) & 0xffff;
-  const lo = value & 0xffff;
-  out.push(encodeI(RVM_OP.LUI, rd, 0, hi | 0));
-  if (lo !== 0) {
-    // ORI extiende imm con sign — para evitar ese problema, dividimos
-    // lo en dos shifts si tiene bit 15 set. Para v1, asumimos lo
-    // positivo o usamos OR explícito por bytes.
-    if ((lo & 0x8000) === 0) {
-      out.push(encodeI(RVM_OP.ORI, rd, rd, lo));
-    } else {
-      // Set lower 16 bits via ORI con 2 mitades de 8 bits (sin sign).
-      const loHi = (lo >>> 8) & 0xff;
-      const loLo = lo & 0xff;
-      out.push(encodeI(RVM_OP.ORI, rd, rd, loHi << 8));
-      out.push(encodeI(RVM_OP.ORI, rd, rd, loLo));
-    }
+  // Valores 16-bit unsigned con bit 15 set (0x8000..0xFFFF):
+  // construimos via ADD self ("doblar la mitad").
+  if (v >= 0 && v <= 0xFFFF) {
+    const half = v >>> 1;
+    out.push(encodeI(RVM_OP.ADDI, rd, 0, half));
+    out.push(encodeR(RVM_OP.ADD, rd, rd, rd));
+    if (v & 1) out.push(encodeI(RVM_OP.ADDI, rd, rd, 1));
+    return;
   }
+  // 32-bit: LUI hi (no sign issue ya que LUI shifts off los upper).
+  // Para lo: si bit 15 set, build via half-trick en R9; OR a rd.
+  const hi = (v >>> 16) & 0xffff;
+  const lo = v & 0xffff;
+  out.push(encodeI(RVM_OP.LUI, rd, 0, hi & 0xffff));
+  if (lo === 0) return;
+  if ((lo & 0x8000) === 0) {
+    out.push(encodeI(RVM_OP.ORI, rd, rd, lo));
+    return;
+  }
+  // lo tiene bit 15: build clean en R9 con half-trick, después OR.
+  const half = lo >>> 1;
+  out.push(encodeI(RVM_OP.ADDI, 9, 0, half));
+  out.push(encodeR(RVM_OP.ADD, 9, 9, 9));
+  if (lo & 1) out.push(encodeI(RVM_OP.ADDI, 9, 9, 1));
+  out.push(encodeR(RVM_OP.OR, rd, rd, 9));
 }
 
 function emitPush(out, rs) {
@@ -86,6 +100,71 @@ function emitPop(out, rd) {
   out.push(encodeI(RVM_OP.ADDI, 7, 7, -4));
   out.push(encodeI(RVM_OP.LW, rd, 7, 0));
 }
+
+// =====================================================================
+// MMIO emit helpers para builtins/queries.
+// =====================================================================
+
+// Empuja el valor de Rsrc al ARG[idx] del MMIO.
+function emitMmioStoreArg(out, idx, rsrc) {
+  // SW Rsrc, [R5 + idx*4]; pero R5 no está reservado. Usemos:
+  //   loadImm R8, MMIO_ARG0 + idx*4
+  //   SW Rsrc, R8, 0
+  // Demasiado caro. En vez: cargamos R8 = MMIO_ARG0 una vez por funcion
+  // (caller-saved). Para v1 simple, hacemos load + SW cada vez.
+  loadImm32(out, 8, MMIO_ARG0 + idx * 4);
+  out.push(encodeI(RVM_OP.SW, rsrc, 8, 0));
+}
+
+// SW val a MMIO_CMD = code (dispara el comando).
+function emitMmioCmd(out, code) {
+  loadImm32(out, 8, MMIO_CMD);
+  loadImm32(out, 1, code);
+  out.push(encodeI(RVM_OP.SW, 1, 8, 0));
+}
+
+// LW Rdst, MMIO_RESULT.
+function emitMmioLoadResult(out, rdst) {
+  loadImm32(out, 8, MMIO_RESULT);
+  out.push(encodeI(RVM_OP.LW, rdst, 8, 0));
+}
+
+// Statement con N args: pop N en ARG[N-1..0], luego CMD.
+function emitMmioStmt(out, arity, cmdCode) {
+  // El stack tiene los args en orden push: arg0, arg1, ..., arg[N-1] arriba.
+  // Pop top primero → ARG[N-1].
+  for (let i = arity - 1; i >= 0; i--) {
+    emitPop(out, 1);
+    emitMmioStoreArg(out, i, 1);
+  }
+  emitMmioCmd(out, cmdCode);
+}
+
+// Query con N args: pop args, set ARGn, CMD, push RESULT.
+function emitMmioQuery(out, arity, cmdCode) {
+  for (let i = arity - 1; i >= 0; i--) {
+    emitPop(out, 1);
+    emitMmioStoreArg(out, i, 1);
+  }
+  emitMmioCmd(out, cmdCode);
+  emitMmioLoadResult(out, 1);
+  emitPush(out, 1);
+}
+
+// INV usa el operand del bytecode (0=X, 1=Y) en lugar de un arg en stack.
+function emitMmioStmtImmAxis(out, axis) {
+  emitPop(out, 1);                          // n
+  emitMmioStoreArg(out, 0, 1);
+  loadImm32(out, 1, axis & 0xff);
+  emitMmioStoreArg(out, 1, 1);
+  emitMmioCmd(out, CMD.INV);
+}
+
+// Aliases locales para los CMD de memoria indirecta.
+const CMD_LDR    = CMD.LDR;
+const CMD_STR    = CMD.STR;
+const CMD_MEMCPY = CMD.MEMCPY;
+const CMD_MEMSET = CMD.MEMSET;
 
 // =====================================================================
 // transpile: input es el output de compile() del v2-A:
@@ -142,22 +221,26 @@ export function transpile(v2aProgram) {
         break;
       case OP.ADDV:
       case OP.SUBV:
-      case OP.MULV:
-      case OP.DIVV: {
-        emitPop(out, 1);                                 // value
-        out.push(encodeI(RVM_OP.LW, 2, 12, opdU * 4));    // R2 = vars[r]
+      case OP.MULV: {
+        emitPop(out, 1);
+        out.push(encodeI(RVM_OP.LW, 2, 12, opdU * 4));
         const aluOp = op === OP.ADDV ? RVM_OP.ADD :
                       op === OP.SUBV ? RVM_OP.SUB :
-                      op === OP.MULV ? RVM_OP.MUL : null;
-        if (aluOp) {
-          out.push(encodeR(aluOp, 2, 2, 1));
-        } else {
-          // DIV: usar SUB+SHR-style? Hardware no tiene DIV; emitir como
-          // bug por ahora (DIV no soportado en esta primera versión).
-          // Marcamos como NOP — los tests evitan DIV de variables.
-          throw new Error('DIVV todavía no soportado por transpiler v1');
-        }
+                                        RVM_OP.MUL;
+        out.push(encodeR(aluOp, 2, 2, 1));
         out.push(encodeI(RVM_OP.SW, 2, 12, opdU * 4));
+        break;
+      }
+      case OP.DIVV: {
+        // vars[r] = vars[r] / pop  → vía MMIO Q_DIV.
+        // Stack: ..., divisor.  ARG1 = divisor; ARG0 = vars[r].
+        emitPop(out, 1);                              // divisor
+        emitMmioStoreArg(out, 1, 1);                  // ARG1 = divisor
+        out.push(encodeI(RVM_OP.LW, 1, 12, opdU * 4)); // R1 = vars[r]
+        emitMmioStoreArg(out, 0, 1);                   // ARG0 = vars[r]
+        emitMmioCmd(out, CMD.Q_DIV);
+        emitMmioLoadResult(out, 1);                    // R1 = result
+        out.push(encodeI(RVM_OP.SW, 1, 12, opdU * 4)); // vars[r] = R1
         break;
       }
 
@@ -198,27 +281,24 @@ export function transpile(v2aProgram) {
       case OP.SUB:
       case OP.MUL:
       case OP.AND:
-      case OP.OR:
-      case OP.MOD: {
-        emitPop(out, 2);  // b
-        emitPop(out, 1);  // a
+      case OP.OR: {
+        emitPop(out, 2);
+        emitPop(out, 1);
         const aluOp = op === OP.ADD ? RVM_OP.ADD :
                       op === OP.SUB ? RVM_OP.SUB :
                       op === OP.MUL ? RVM_OP.MUL :
                       op === OP.AND ? RVM_OP.AND :
-                      op === OP.OR  ? RVM_OP.OR  : null;
-        if (aluOp !== null) {
-          out.push(encodeR(aluOp, 1, 1, 2));
-        } else {
-          // MOD: a - (a / b) * b. RVM-32 no tiene DIV. Soft-emul: por
-          // ahora marcamos como TODO. Los tests evitan MOD.
-          throw new Error('MOD todavía no soportado por transpiler v1');
-        }
+                                       RVM_OP.OR;
+        out.push(encodeR(aluOp, 1, 1, 2));
         emitPush(out, 1);
         break;
       }
       case OP.DIV:
-        throw new Error('DIV todavía no soportado por transpiler v1');
+        emitMmioQuery(out, 2, CMD.Q_DIV);
+        break;
+      case OP.MOD:
+        emitMmioQuery(out, 2, CMD.Q_MOD);
+        break;
       case OP.NEG:
         emitPop(out, 1);
         out.push(encodeR(RVM_OP.SUB, 1, 0, 1));
@@ -273,21 +353,192 @@ export function transpile(v2aProgram) {
       case OP.JMP:
       case OP.JZ:
       case OP.JNZ: {
-        // Forward/backward jump al v2A pc opdU. Resolución en pasada 2.
         if (op === OP.JZ || op === OP.JNZ) {
           emitPop(out, 1);
-          // BEQ R1,R0 = "es cero" → para JZ saltamos si == 0.
-          // Para JNZ saltamos si != 0 → BNE.
           const brOp = op === OP.JZ ? RVM_OP.BEQ : RVM_OP.BNE;
-          // Patch: el offset relativo se resuelve después.
           patches.push({ rvmInstrIdx: out.length, v2aTargetWordIdx: opdU, kind: 'branch', op: brOp });
-          out.push(encodeI(brOp, 1, 0, 0));  // placeholder
+          out.push(encodeI(brOp, 1, 0, 0));
         } else {
           patches.push({ rvmInstrIdx: out.length, v2aTargetWordIdx: opdU, kind: 'jmp' });
           out.push(encodeJ(RVM_OP.JMP, 0, 0));
         }
         break;
       }
+      case OP.CALL: {
+        // push R15; JAL R15, target; pop R15.
+        out.push(encodeI(RVM_OP.ADDI, 14, 14, -4));
+        out.push(encodeI(RVM_OP.SW, 15, 14, 0));
+        patches.push({ rvmInstrIdx: out.length, v2aTargetWordIdx: opdU, kind: 'jal' });
+        out.push(encodeJ(RVM_OP.JAL, 15, 0));
+        out.push(encodeI(RVM_OP.LW, 15, 14, 0));
+        out.push(encodeI(RVM_OP.ADDI, 14, 14, 4));
+        break;
+      }
+      case OP.RET:
+        out.push(encodeR(RVM_OP.JR, 0, 15, 0));
+        break;
+
+      // -------------------- PAR / SIG -----------------------------
+      case OP.PARINIT: {
+        // pop end → R2
+        emitPop(out, 2);
+        // ADDI R6, R6, -16 ; ADDI R1, R0, var_idx ; SW R1, R6, 0
+        // SW R2, R6, 4 ; JAL R3, 1 ; ADDI R3, R3, 8 ; SW R3, R6, 8
+        out.push(encodeI(RVM_OP.ADDI, 6, 6, -16));
+        loadImm32(out, 1, opdU);                   // var_idx (4-bit, sm)
+        out.push(encodeI(RVM_OP.SW, 1, 6, 0));
+        out.push(encodeI(RVM_OP.SW, 2, 6, 4));
+        out.push(encodeJ(RVM_OP.JAL, 3, 1));        // R3 = pc+4 (next instr)
+        out.push(encodeI(RVM_OP.ADDI, 3, 3, 8));    // R3 = pc+12 (body)
+        out.push(encodeI(RVM_OP.SW, 3, 6, 8));      // frame[2] = body_pc
+        break;
+      }
+      case OP.PARSIG: {
+        out.push(encodeI(RVM_OP.LW, 1, 6, 0));      // var_idx
+        out.push(encodeI(RVM_OP.LW, 2, 6, 4));      // end
+        out.push(encodeI(RVM_OP.LW, 3, 6, 8));      // body_pc
+        // address de var: R1 = R12 + var_idx*4
+        out.push(encodeR(RVM_OP.ADD, 1, 1, 1));     // *2
+        out.push(encodeR(RVM_OP.ADD, 1, 1, 1));     // *4
+        out.push(encodeR(RVM_OP.ADD, 1, 12, 1));    // R1 = vars + var_idx*4
+        out.push(encodeI(RVM_OP.LW, 4, 1, 0));      // R4 = var
+        out.push(encodeI(RVM_OP.ADDI, 4, 4, 1));    // var++
+        out.push(encodeI(RVM_OP.SW, 4, 1, 0));      // store
+        // si end < new_var → exit (skip JR)
+        out.push(encodeI(RVM_OP.BLT, 2, 4, 2));      // BLT end, var, +2 → skip JR
+        out.push(encodeR(RVM_OP.JR, 0, 3, 0));       // JR R3 (back to body)
+        out.push(encodeI(RVM_OP.ADDI, 6, 6, 16));    // pop frame
+        break;
+      }
+
+      // -------------------- memoria absoluta ----------------------
+      case OP.LDM:
+      case OP.LDW: {
+        emitPop(out, 1);                           // addr
+        const ldOp = op === OP.LDM ? RVM_OP.LBU : RVM_OP.LW;
+        out.push(encodeI(ldOp, 1, 1, 0));
+        emitPush(out, 1);
+        break;
+      }
+      case OP.STM:
+      case OP.STW: {
+        emitPop(out, 1);                           // val
+        emitPop(out, 2);                           // addr
+        const stOp = op === OP.STM ? RVM_OP.SB : RVM_OP.SW;
+        out.push(encodeI(stOp, 1, 2, 0));
+        break;
+      }
+      case OP.LDR: {
+        // pop offset, slot, region → ARG2, ARG1, ARG0
+        emitPop(out, 1);                           // offset
+        emitMmioStoreArg(out, 2, 1);
+        emitPop(out, 1);                           // slot
+        emitMmioStoreArg(out, 1, 1);
+        emitPop(out, 1);                           // region
+        emitMmioStoreArg(out, 0, 1);
+        emitMmioCmd(out, CMD_LDR);
+        emitMmioLoadResult(out, 1);
+        emitPush(out, 1);
+        break;
+      }
+      case OP.STR: {
+        emitPop(out, 1);  emitMmioStoreArg(out, 3, 1);  // val
+        emitPop(out, 1);  emitMmioStoreArg(out, 2, 1);  // offset
+        emitPop(out, 1);  emitMmioStoreArg(out, 1, 1);  // slot
+        emitPop(out, 1);  emitMmioStoreArg(out, 0, 1);  // region
+        emitMmioCmd(out, CMD_STR);
+        break;
+      }
+      case OP.MEMCPY: {
+        emitPop(out, 1);  emitMmioStoreArg(out, 2, 1);  // n
+        emitPop(out, 1);  emitMmioStoreArg(out, 1, 1);  // dst
+        emitPop(out, 1);  emitMmioStoreArg(out, 0, 1);  // src
+        emitMmioCmd(out, CMD_MEMCPY);
+        break;
+      }
+      case OP.MEMSET: {
+        emitPop(out, 1);  emitMmioStoreArg(out, 2, 1);  // n
+        emitPop(out, 1);  emitMmioStoreArg(out, 1, 1);  // val
+        emitPop(out, 1);  emitMmioStoreArg(out, 0, 1);  // dst
+        emitMmioCmd(out, CMD_MEMSET);
+        break;
+      }
+
+      // -------------------- builtins (statements) -----------------
+      case OP.BOR:    emitMmioStmt(out, 1, CMD.BOR); break;
+      case OP.PIN:    emitMmioStmt(out, 3, CMD.PIN); break;
+      case OP.REC:    emitMmioStmt(out, 5, CMD.REC); break;
+      case OP.SPR:    emitMmioStmt(out, 4, CMD.SPR); break;
+      case OP.SPRR:   emitMmioStmt(out, 5, CMD.SPRR); break;
+      case OP.SPRA:   emitMmioStmt(out, 4, CMD.SPRA); break;
+      case OP.MOV:    emitMmioStmt(out, 3, CMD.MOV); break;
+      case OP.VEL:    emitMmioStmt(out, 3, CMD.VEL); break;
+      case OP.ANI:    emitMmioStmt(out, 4, CMD.ANI); break;
+      case OP.OCU:    emitMmioStmt(out, 2, CMD.OCU); break;
+      case OP.INV:    emitMmioStmtImmAxis(out, opdU); break;  // INV usa operand para axis
+      case OP.PAT:    emitMmioStmt(out, 2, CMD.PAT); break;
+      case OP.MAP_:   emitMmioStmt(out, 3, CMD.MAP_); break;
+      case OP.FON:    emitMmioStmt(out, 1, CMD.FON); break;
+      case OP.SOL: {
+        // Variable arity = opdU. Args: ARG0 = mapIdx, ARG1 = count, ARG2..n tiles.
+        const arity = opdU;
+        // Pop arity-1 tiles + 1 mapIdx total (= arity).
+        // Stack order (last pushed = top): tiles[N-1], ..., tiles[0], map.
+        // Pop into ARG2+(N-1), ..., ARG2, then map → ARG0.
+        const tileCount = arity - 1;
+        if (tileCount > 6) throw new Error('SOL: max 6 tiles soportadas en RVM-32 v1');
+        for (let i = tileCount - 1; i >= 0; i--) {
+          emitPop(out, 1);
+          emitMmioStoreArg(out, 2 + i, 1);
+        }
+        emitPop(out, 1);  emitMmioStoreArg(out, 0, 1);  // map
+        // Set ARG1 = tileCount
+        loadImm32(out, 1, tileCount);
+        emitMmioStoreArg(out, 1, 1);
+        emitMmioCmd(out, CMD.SOL);
+        break;
+      }
+      case OP.GRA:    emitMmioStmt(out, 3, CMD.GRA); break;
+      case OP.SAL:    emitMmioStmt(out, 2, CMD.SAL); break;
+      case OP.LIM:    emitMmioStmt(out, 5, CMD.LIM); break;
+      case OP.SON:    emitMmioStmt(out, 2, CMD.SON); break;
+      case OP.RUI:    emitMmioStmt(out, 1, CMD.RUI); break;
+      case OP.SIL:    emitMmioStmt(out, 1, CMD.SIL); break;
+      case OP.CARNIV: emitMmioStmt(out, 1, CMD.CARNIV); break;
+
+      // -------------------- queries (push result) -----------------
+      case OP.X_:    emitMmioQuery(out, 1, CMD.Q_X); break;
+      case OP.Y_:    emitMmioQuery(out, 1, CMD.Q_Y); break;
+      case OP.VX_:   emitMmioQuery(out, 1, CMD.Q_VX); break;
+      case OP.VY_:   emitMmioQuery(out, 1, CMD.Q_VY); break;
+      case OP.VIS:   emitMmioQuery(out, 1, CMD.Q_VIS); break;
+      case OP.COL:   emitMmioQuery(out, 2, CMD.Q_COL); break;
+      case OP.DIS:   emitMmioQuery(out, 2, CMD.Q_DIS); break;
+      case OP.TIL:   emitMmioQuery(out, 3, CMD.Q_TIL); break;
+      case OP.COLM:  emitMmioQuery(out, 2, CMD.Q_COLM); break;
+      case OP.PIE:   emitMmioQuery(out, 1, CMD.Q_PIE); break;
+      case OP.BTN:   emitMmioQuery(out, 1, CMD.Q_BTN); break;
+      case OP.TEC:   emitMmioQuery(out, 1, CMD.Q_TEC); break;
+      case OP.ALE:   emitMmioQuery(out, 1, CMD.Q_ALE); break;
+      case OP.ABS_F: emitMmioQuery(out, 1, CMD.Q_ABS); break;
+      case OP.SGN:   emitMmioQuery(out, 1, CMD.Q_SGN); break;
+      case OP.RAI:   emitMmioQuery(out, 1, CMD.Q_RAI); break;
+      case OP.SEN:   emitMmioQuery(out, 1, CMD.Q_SEN); break;
+      case OP.COS:   emitMmioQuery(out, 1, CMD.Q_COS); break;
+      case OP.MIN:   emitMmioQuery(out, 2, CMD.Q_MIN); break;
+      case OP.MAX:   emitMmioQuery(out, 2, CMD.Q_MAX); break;
+
+      // -------------------- LDC, TXT — futuro -----------------------
+      case OP.LDC:
+        // Constants pool index — usado para strings (TXT). Para v1
+        // empujamos sólo el índice como int; TXT abajo usa el ARG2.
+        loadImm32(out, 1, opdU);
+        emitPush(out, 1);
+        break;
+      case OP.TXT:
+        // ARG0..3 = x, y, strIdx, color. Stack tiene 4 valores ya.
+        emitMmioStmt(out, 4, CMD.TXT);
+        break;
 
       default:
         // Opcode no soportado en v1: emitimos un NOP+marker para que el
@@ -309,11 +560,10 @@ export function transpile(v2aProgram) {
     const offsetBytes = target - fromBytePc;
     const offsetWords = offsetBytes >> 2;
     if (p.kind === 'branch') {
-      // imm16 signed (en RVM-32 branches usan offset*4)
-      const word = encodeI(p.op, 1, 0, offsetWords);
-      out[p.rvmInstrIdx] = word;
+      out[p.rvmInstrIdx] = encodeI(p.op, 1, 0, offsetWords);
+    } else if (p.kind === 'jal') {
+      out[p.rvmInstrIdx] = encodeJ(RVM_OP.JAL, 15, offsetWords);
     } else {
-      // jmp imm20
       out[p.rvmInstrIdx] = encodeJ(RVM_OP.JMP, 0, offsetWords);
     }
   }
@@ -341,5 +591,8 @@ export function transpile(v2aProgram) {
     byteCount: out.length * 4,
     handlers,
     v2aToRvmPc,
+    // Pool de constantes (strings de TXT). El runner debe setear
+    // vmRef.rvmConstants = transpiledResult.constants antes de runRVM32.
+    constants: v2aProgram.constants || [],
   };
 }
