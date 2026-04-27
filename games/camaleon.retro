@@ -99,15 +99,15 @@ PROGRAMA
 220 FON 0:SOL 0,2
 230 GRA 0,0,1
 240 MOV 0,16,40
+245 STR $RSON,0,0,(NIV+2)%4 ; v2-C: rota la onda del salto por NIV
 250 PAT 4,3:MOV 4,160,80   ; coin (slot 4 usa sprite 3)
 260 RET
 
 ; --- recolor del player: scan del sprite 1, swap color 9 por 9+NIV ---
 ;   slot 1 ocupa 64 bytes (8x8). Iteramos byte a byte con LDR/STR.
-;   STR(REGION_SPR=1, slot=1, offset, val).
 700 PAR I=0 A 63
-705 SI LDR(1,1,I)<>9 ENT 715
-710 STR 1,1,I,9+NIV
+705 SI LDR($RSPR,1,I)<>9 ENT 715
+710 STR $RSPR,1,I,9+NIV
 715 SIG
 720 RET
 
@@ -117,17 +117,17 @@ PROGRAMA
 ;   NIV=1: piso + plataforma row 8, cols 5..8.
 ;   NIV=2: anteriores + plataforma row 5, cols 12..15.
 ;   Vamos a limpiar primero todo (240 cells) y dibujar lo de este nivel.
-750 MEMSET 0x18000,0,240   ; mapa 0 base = 0x18000, 240 cells
+750 MEMSET $MAP_BASE,0,240
 755 PAR I=0 A 19
-758 STR 2,0,220+I,2        ; piso fila 11
+758 STR $RMAP,0,220+I,2    ; piso fila 11
 760 SIG
 762 SI NIV<1 ENT 790
 765 PAR I=0 A 3
-768 STR 2,0,165+I,2        ; row 8 col 5..8
+768 STR $RMAP,0,165+I,2    ; row 8 col 5..8
 770 SIG
 775 SI NIV<2 ENT 790
 778 PAR I=0 A 3
-780 STR 2,0,112+I,2        ; row 5 col 12..15
+780 STR $RMAP,0,112+I,2    ; row 5 col 12..15
 785 SIG
 790 RET
 
@@ -171,7 +171,7 @@ PROGRAMA
 555 SI NIV=0 ENT TXT 40,4,"1"
 558 SI NIV=1 ENT TXT 40,4,"2"
 562 SI NIV=2 ENT TXT 40,4,"3"
-566 C=LDR(1,1,9)           ; lee el color actual del cuerpo del sprite
+566 C=LDR($RSPR,1,9)       ; lee el color actual del cuerpo del sprite
 570 REC 60,4,8,8,C
 574 TXT 80,4,"COLOR",7
 580 RET

@@ -51,6 +51,9 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
     sonMem: new Uint8Array(MEM.SON.size),
     freeMem: new Uint8Array(MEM.FREE.size),
   };
+  // Permite que el synth sepa qué buffer de bytes re-deserializar
+  // cuando STR(SON,...) marca un slot como dirty (v2-C).
+  vmRef.synth.sonMemRef = vmRef.sonMem;
   const bank = createPaletteBank();
   setPalette(bank, 0, DEFAULT_PALETTE);
   vmRef.bank = bank;  // expuesto para readByte/writeByte (region PAL)
@@ -172,6 +175,9 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
     mapState: vmRef.mapState,
     inputState: vmRef.inputState,
     synth: vmRef.synth,
+    sonMem: vmRef.sonMem,
+    freeMem: vmRef.freeMem,
+    codeMem: vmRef.codeMem,
     program: compiled.program,
     handlers: compiled.handlers,
     lineToIdx: compiled.lineToIdx,

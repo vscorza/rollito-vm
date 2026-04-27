@@ -206,8 +206,14 @@ export function writeByte(state, vmRef, addr, val) {
     writePaletteByteAt(vmRef, addr - MEM.PAL.base, val);
     return;
   }
-  // SON: en v1 no se permite modificar sonidos byte-a-byte (v2-C).
+  // SON: muta sonMem y marca el slot dirty para re-parseo al próximo
+  // playSound (v2-C).
   if (addr < MEM.FB.base) {
+    if (!vmRef.sonMem) return;
+    const off = addr - MEM.SON.base;
+    vmRef.sonMem[off] = val;
+    const slot = (off / MEM.SON.slotStride) | 0;
+    if (vmRef.synth && vmRef.synth.dirtySounds) vmRef.synth.dirtySounds[slot] = 1;
     return;
   }
   // FB
@@ -242,7 +248,7 @@ export function writeByteIndexed(vmRef, region, slot, offset, val) {
     case REGION_PAL: writePaletteIndexed(vmRef, slot, offset, val); return;
     case REGION_SPR: writeSpriteIndexed(vmRef, slot, offset, val); return;
     case REGION_MAP: writeMapIndexed(vmRef, slot, offset, val); return;
-    case REGION_SON: /* v1 no-op: v2-C activa esto */ return;
+    case REGION_SON: writeSoundIndexed(vmRef, slot, offset, val); return;
     default: return;
   }
 }
@@ -511,4 +517,12 @@ function readSoundIndexed(vmRef, slot, offset) {
   if (offset < 0 || offset >= MEM.SON.slotMax) return 0;
   if (!vmRef.sonMem) return 0;
   return vmRef.sonMem[slot * MEM.SON.slotStride + offset];
+}
+
+function writeSoundIndexed(vmRef, slot, offset, val) {
+  if (slot < 0 || slot >= MEM.SON.slots) return;
+  if (offset < 0 || offset >= MEM.SON.slotMax) return;
+  if (!vmRef.sonMem) return;
+  vmRef.sonMem[slot * MEM.SON.slotStride + offset] = val;
+  if (vmRef.synth && vmRef.synth.dirtySounds) vmRef.synth.dirtySounds[slot] = 1;
 }

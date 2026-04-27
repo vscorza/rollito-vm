@@ -41,6 +41,10 @@ export function createSynth(audioCtx = null) {
     pendingSilenceEvent: false,
     headlessTime: 0,
     _wasAllSilent: true,
+    // Marca slots cuyos bytes en sonMem cambiaron via STR(SON,...);
+    // playSound los re-deserializa antes de disparar (v2-C).
+    dirtySounds: new Uint8Array(SOUND_SLOTS),
+    sonMemRef: null,
   };
   if (audioCtx) attachAudioContext(synth, audioCtx);
   return synth;
@@ -145,14 +149,55 @@ export function serializeSoundToBytes(def, dst) {
   }
 }
 
+// Re-construye synth.sounds[slot] desde el layout flat en sonMem
+// (inverso de serializeSoundToBytes). v2-C: permite que `STR(SON,...)`
+// cambie un sonido en runtime.
+export function deserializeSoundFromBytes(synth, slot, src) {
+  if (slot < 0 || slot >= SOUND_SLOTS) return;
+  const wave = ['TRI', 'SIE', 'PUL', 'SEN'][src[0] & 0x03] || 'PUL';
+  const pulseWidth = src[1] & 0x0f;
+  const env = { a: src[2] & 0x0f, d: src[3] & 0x0f, s: src[4] & 0x0f, r: src[5] & 0x0f };
+  const count = (src[6] | (src[7] << 8)) & 0xffff;
+  const safeCount = Math.min(count, 190);
+  const steps = [];
+  let totalTicks = 0;
+  for (let i = 0; i < safeCount; i++) {
+    const off = 8 + i * 4;
+    const type = src[off + 0] & 1;
+    const ticks = src[off + 2] & 0xff;
+    if (ticks === 0) continue;
+    if (type === 1) {
+      steps.push({ type: 'silence', ticks });
+    } else {
+      const packed = src[off + 1];
+      const semitone = packed & 0x0f;
+      const octave = (packed >>> 4) & 0x07;
+      steps.push({ type: 'note', freq: lookupFreq(semitone, octave), ticks });
+    }
+    totalTicks += ticks;
+  }
+  synth.sounds[slot] = { wave, pulseWidth, env, steps, totalTicks };
+}
+
+function reloadIfDirty(synth, slot) {
+  if (!synth.dirtySounds || !synth.dirtySounds[slot]) return;
+  if (!synth.sonMemRef) return;
+  const slotStride = synth.sonMemRef.length / SOUND_SLOTS;
+  const src = synth.sonMemRef.subarray(slot * slotStride, (slot + 1) * slotStride);
+  deserializeSoundFromBytes(synth, slot, src);
+  synth.dirtySounds[slot] = 0;
+}
+
 export function playSound(synth, slot, channelIdx) {
   if (channelIdx < 0 || channelIdx >= TONAL_CHANNELS) return;
+  reloadIfDirty(synth, slot);
   const sound = synth.sounds[slot];
   if (!sound) return;
   startChannel(synth, sound, channelIdx, false);
 }
 
 export function playNoise(synth, slot) {
+  reloadIfDirty(synth, slot);
   const sound = synth.sounds[slot];
   if (!sound) return;
   startChannel(synth, sound, NOISE_CHANNEL, true);

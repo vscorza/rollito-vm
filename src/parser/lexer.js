@@ -58,6 +58,35 @@ export const SPECIAL_VARS = new Set([
   'VID', 'PUN', 'NIV', 'CUA', 'LIN',
 ]);
 
+// Constantes simbólicas (docs/PLAN.md §18.3, v2-G). El lexer las resuelve
+// a literales numéricos al ver `$NAME`. Mantener en sync con MEM en
+// src/core/memory.js.
+export const SYMBOLIC_CONSTS = {
+  // Region IDs (LDR/STR).
+  RPAL: 0, RSPR: 1, RMAP: 2, RSON: 3,
+  // Region bases.
+  CODE_BASE:  0x00000,
+  STATE_BASE: 0x08000,
+  SPR_BASE:   0x10000,
+  MAP_BASE:   0x18000,
+  PAL_BASE:   0x1C000,
+  SON_BASE:   0x1D000,
+  FB_BASE:    0x20000,
+  FREE_BASE:  0x30000,
+  MEM_END:    0x80000,
+  // Strides por slot.
+  SPR_STRIDE: 0x400,
+  MAP_STRIDE: 0x1000,
+  PAL_STRIDE: 0x400,
+  SON_STRIDE: 0x300,
+  // Tamaños útiles.
+  SPR_BYTES:  256,
+  PAL_BYTES:  64,
+  SON_BYTES:  768,
+  FB_W:       320,
+  FB_H:       200,
+};
+
 function isDigit(c) { return c >= '0' && c <= '9'; }
 function isAlpha(c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 function isAlphaNum(c) { return isAlpha(c) || isDigit(c); }
@@ -96,6 +125,20 @@ export function tokenize(line) {
       if (KEYWORDS.has(word)) type = 'kw';
       else type = 'ident';
       tokens.push({ type, value: word, col: i });
+      i = j;
+      continue;
+    }
+
+    // Constantes simbólicas: $NAME → literal numérico (v2-G).
+    if (c === '$') {
+      let j = i + 1;
+      while (j < n && (isAlphaNum(line[j]) || line[j] === '_')) j++;
+      if (j === i + 1) throw new Error(`'$' sin nombre en columna ${i + 1}`);
+      const name = line.slice(i + 1, j).toUpperCase();
+      if (!Object.prototype.hasOwnProperty.call(SYMBOLIC_CONSTS, name)) {
+        throw new Error(`constante simbólica desconocida: $${name}`);
+      }
+      tokens.push({ type: 'number', value: SYMBOLIC_CONSTS[name], col: i });
       i = j;
       continue;
     }

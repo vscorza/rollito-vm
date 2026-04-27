@@ -581,12 +581,14 @@ Side effects por región:
 - `STR 2,n,...` muta una celda del mapa n y marca `dirty=true` para
   que `FON n` redibuje en el próximo cuadro.
 - `STR 0,n,...` actualiza la LUT (offset 0..63 = 16 colores RGBA).
-- `STR 3,...` es **no-op** en v1 (los sonidos no se modifican byte a
-  byte todavía).
+- `STR 3,n,...` muta `sonMem[n]` y marca el slot dirty; el próximo
+  `SON n,c` re-deserializa el sonido desde los bytes (layout en
+  PLAN.md §18.4).
 
 ```
-20 STR 1,1,9,4                    ; sprite 1 px 9 = color 4 (17)
-30 STR 2,0,165,2                  ; mapa 0 cell 165 = tile 2 (19)
+20 STR $RSPR,1,9,4                ; sprite 1 px 9 = color 4 (22)
+30 STR $RMAP,0,165,2               ; mapa 0 cell 165 = tile 2 (26)
+40 STR $RSON,0,0,3                 ; sonido 0: cambiar onda a SEN (24)
 ```
 
 ### 15.5. Operaciones bulk — `MEMCPY`/`MEMSET`
@@ -605,14 +607,41 @@ Copia `n` bytes de `src` a `dst`. Maneja solapamiento dst > src.
 20 MEMCPY 0x20000,0x30000,64000   ; FB → FREE (snapshot, 28)
 ```
 
-### 15.6. Constantes simbólicas (reservadas, v2)
+### 15.6. Constantes simbólicas
 
-Para mejorar la legibilidad sin que tengas que recordar offsets:
-`$RPAL=0`, `$RSPR=1`, `$RMAP=2`, `$RSON=3`, `$SPR_BASE=0x10000`,
-`$MAP_BASE=0x18000`, `$PAL_BASE=0x1C000`, `$SON_BASE=0x1D000`,
-`$FB_BASE=0x20000`, `$FREE_BASE=0x30000`. **En v1 estos nombres no
-están implementados** — usalos en comentarios. v2-G activa la
-resolución `$NAME → valor` lex-time.
+El lexer resuelve `$NAME` a su literal numérico antes de parsear, así
+que escribir `STM $FB_BASE,9` es idéntico a `STM 0x20000,9`. Los
+nombres son case-insensitive.
+
+| Nombre          | Valor      | Uso                              |
+|-----------------|-----------:|----------------------------------|
+| `$RPAL`         | `0`        | Region ID para `LDR`/`STR`       |
+| `$RSPR`         | `1`        | "                                |
+| `$RMAP`         | `2`        | "                                |
+| `$RSON`         | `3`        | "                                |
+| `$CODE_BASE`    | `0x00000`  | Inicio de CODE                   |
+| `$STATE_BASE`   | `0x08000`  | Inicio de STATE                  |
+| `$SPR_BASE`     | `0x10000`  | Inicio de SPR                    |
+| `$MAP_BASE`     | `0x18000`  | Inicio de MAP                    |
+| `$PAL_BASE`     | `0x1C000`  | Inicio de PAL                    |
+| `$SON_BASE`     | `0x1D000`  | Inicio de SON                    |
+| `$FB_BASE`      | `0x20000`  | Inicio del framebuffer           |
+| `$FREE_BASE`    | `0x30000`  | Inicio de FREE                   |
+| `$MEM_END`      | `0x80000`  | Tamaño total = 512 KB            |
+| `$SPR_STRIDE`   | `0x400`    | Bytes entre slots de SPR         |
+| `$MAP_STRIDE`   | `0x1000`   | "                                |
+| `$PAL_STRIDE`   | `0x400`    | "                                |
+| `$SON_STRIDE`   | `0x300`    | "                                |
+| `$SPR_BYTES`    | `256`      | Bytes útiles por slot SPR        |
+| `$PAL_BYTES`    | `64`       | Bytes útiles por slot PAL        |
+| `$SON_BYTES`    | `768`      | Bytes útiles por slot SON        |
+| `$FB_W`         | `320`      | Ancho del framebuffer            |
+| `$FB_H`         | `200`      | Alto del framebuffer             |
+
+```
+10 STR $RSPR,1,9,4                ; sprite 1 px 9 = color 4 (22)
+20 MEMSET $MAP_BASE,0,240         ; clear MAPA 0     (24)
+```
 
 ### 15.7. Casos borde
 

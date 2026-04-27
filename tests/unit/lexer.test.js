@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tokenize, KEYWORDS, BUILTINS, SPECIAL_VARS } from '../../src/parser/lexer.js';
+import { tokenize, KEYWORDS, BUILTINS, SPECIAL_VARS, SYMBOLIC_CONSTS } from '../../src/parser/lexer.js';
 
 describe('tokenize', () => {
   it('reconoce números', () => {
@@ -65,5 +65,25 @@ describe('tokenize', () => {
     expect(KEYWORDS.has('PAR')).toBe(true);
     expect(BUILTINS.has('REC')).toBe(true);
     expect(SPECIAL_VARS.has('CUA')).toBe(true);
+  });
+
+  it('resuelve constantes simbólicas $NAME a literales numéricos', () => {
+    const t = tokenize('STM $FB_BASE,9');
+    expect(t[1]).toMatchObject({ type: 'number', value: 0x20000 });
+    const t2 = tokenize('A=LDR($RSPR,1,0)');
+    expect(t2[4]).toMatchObject({ type: 'number', value: 1 });
+    expect(SYMBOLIC_CONSTS.RPAL).toBe(0);
+    expect(SYMBOLIC_CONSTS.SPR_BASE).toBe(0x10000);
+    expect(SYMBOLIC_CONSTS.MEM_END).toBe(0x80000);
+  });
+
+  it('$NAME es case-insensitive', () => {
+    expect(tokenize('$rspr')[0]).toMatchObject({ type: 'number', value: 1 });
+    expect(tokenize('$Spr_Base')[0]).toMatchObject({ type: 'number', value: 0x10000 });
+  });
+
+  it('$ sin nombre o nombre desconocido lanza', () => {
+    expect(() => tokenize('A=$')).toThrow(/sin nombre/);
+    expect(() => tokenize('A=$NOPE')).toThrow(/desconocida/);
   });
 });

@@ -872,39 +872,18 @@ Notas por región:
   - `STR(SPR, ...)` muta `pattern.pixels` directamente — el render lo
     lee fresh cada cuadro.
 - **SON**: `LDR` retorna bytes según el layout serializado (§18.4).
-  `STR(SON, ...)` es **no-op** en v1 (la def. textual no se re-parsea
-  en runtime). Movido a v2-C.
+  `STR(SON, ...)` muta `sonMem` y marca el slot dirty; el próximo
+  `SON n,c` re-deserializa antes de disparar.
 - **FB** byte-accesible: equivalente a `PIN` sin clipping.
 - **FREE**: `Uint8Array(320*1024)` en `vmRef.freeMem`. Útil para
   scratch space, snapshots, level-loading, save states.
 
-### 18.3. Constantes simbólicas (reservadas, v2-G)
+### 18.3. Constantes simbólicas
 
-Para que el código sea legible sin que el usuario tenga que recordar
-offsets:
-
-| Símbolo        | Valor      | Significado            |
-|----------------|------------|------------------------|
-| `$RPAL`        | `0`        | Region ID: PAL         |
-| `$RSPR`        | `1`        | Region ID: SPR         |
-| `$RMAP`        | `2`        | Region ID: MAP         |
-| `$RSON`        | `3`        | Region ID: SON         |
-| `$CODE_BASE`   | `0x00000`  | Inicio de CODE         |
-| `$STATE_BASE`  | `0x08000`  | Inicio de STATE        |
-| `$SPR_BASE`    | `0x10000`  | Inicio de SPR          |
-| `$MAP_BASE`    | `0x18000`  | Inicio de MAP          |
-| `$PAL_BASE`    | `0x1C000`  | Inicio de PAL          |
-| `$SON_BASE`    | `0x1D000`  | Inicio de SON          |
-| `$FB_BASE`     | `0x20000`  | Inicio de framebuffer  |
-| `$FREE_BASE`   | `0x30000`  | Inicio de FREE         |
-| `$SPR_STRIDE`  | `0x400`    | Bytes por slot SPR     |
-| `$MAP_STRIDE`  | `0x1000`   | Bytes por slot MAP     |
-| `$PAL_STRIDE`  | `0x400`    | Bytes por slot PAL     |
-| `$SON_STRIDE`  | `0x300`    | Bytes por slot SON     |
-
-En v1 estos nombres están **documentados pero no resueltos** por el
-lexer. Usarlos en comentarios es válido; usarlos como literales no.
-v2-G activa la resolución `$NAME → valor` lex-time.
+El lexer resuelve `$NAME` a un literal numérico antes de parsear. Tabla
+canónica en `src/parser/lexer.js` (`SYMBOLIC_CONSTS`); detalle en
+REFERENCIA.md §15.6. Cubre IDs de región, bases, strides, tamaños
+útiles y dimensiones del framebuffer.
 
 ### 18.4. Layout de SON (sonidos serializados)
 
@@ -942,7 +921,7 @@ son zonas normales de bytes — no disparan efectos. v2-E las activa:
 | PAL    | byte → LUT      | `bank.luts[slot*16 + idx]` se actualiza byte a byte |
 | MAP    | byte → cell     | cell mutado + `m.dirty = true`                      |
 | SPR    | byte → pixel    | `pattern.pixels[off] = val & 0xf`                   |
-| SON    | (no-op)         | reservado para v2-C                                  |
+| SON    | byte → sonMem   | marca slot dirty; `SON n,c` re-deserializa antes    |
 | FB     | byte → pixel    | `vmRef.fb[off] = val`                                |
 | FREE   | byte → freeMem  | `vmRef.freeMem[off] = val`                           |
 | STATE  | byte → state    | escritura directa, sin chequeo de invariants        |
@@ -961,10 +940,9 @@ archivos sin romper la API:
 - **v2-B — Self-modifying code**: con bytecode real, `STM` en CODE
   re-define instrucciones en runtime. El intérprete debe re-decodear
   cada fetch (no cachear).
-- **v2-C — Modificación de sonidos byte a byte**: `STR(SON, ...)` deja
-  de ser no-op; `SON n,c` re-parsea desde la región antes de disparar.
-  El layout flat ya está definido (§18.4) y `loadSound` ya lo escribe
-  en v1.
+- **v2-C — Modificación de sonidos byte a byte**: ✅ **incluido en v1**.
+  `STR(SON, ...)` muta `sonMem` y marca el slot dirty; `SON n,c`
+  re-deserializa desde los bytes antes de disparar. Layout flat en §18.4.
 - **v2-D — `LDW`/`STW` (32-bit word access)**: ✅ **incluido en v1**.
 - **v2-I — Registro `LUI` (paginación de direcciones)**: si los `.retro`
   empiezan a hacer mucho `LDM(0x30000+i)` con offsets variables, podría
@@ -976,8 +954,7 @@ archivos sin romper la API:
 - **v2-E — Memory-mapped IO**: registros mágicos en STATE (§18.5)
   disparan efectos al escribir. Offsets ya reservados.
 - **v2-F — `MEMCPY` / `MEMSET`**: ✅ **incluido en v1**.
-- **v2-G — Constantes simbólicas (`$RPAL`, etc.)**: el lexer resuelve
-  nombres a literales. Tabla en §18.3.
+- **v2-G — Constantes simbólicas (`$RPAL`, etc.)**: ✅ **incluido en v1**.
 - **v2-H — Memory inspector en la IDE**: panel en `web/editor/` que
   dumpea bytes de cualquier rango durante el debug. Se construye sobre
   `readByte` ya expuesto en v1.

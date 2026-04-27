@@ -92,7 +92,7 @@ PROGRAMA
     expect(vm.state.vars[VAR_INDEX.A]).toBe(3);
   });
 
-  it('SON: STR es no-op en v1 (no rompe pero no escribe)', () => {
+  it('SON: STR escribe el byte y marca el slot dirty (v2-C)', () => {
     const vm = createVM(`
 SONIDO 0
 ONDA TRI
@@ -106,7 +106,8 @@ PROGRAMA
 115 RET
 `);
     step(vm);
-    expect(vm.state.vars[VAR_INDEX.A]).toBe(0);
+    expect(vm.state.vars[VAR_INDEX.A]).toBe(99);
+    expect(vm.synth.dirtySounds[0]).toBe(1);
   });
 
   it('region/slot/offset fuera de rango son no-op silentes', () => {
@@ -334,5 +335,61 @@ describe('Hex literals en el lexer', () => {
     expect(vm.state.vars[VAR_INDEX.A]).toBe(255);
     expect(vm.state.vars[VAR_INDEX.B]).toBe(256);
     expect(vm.state.vars[VAR_INDEX.C]).toBe(0xCAFE);
+  });
+});
+
+describe('v2-C: STR(SON,...) + SON n,c re-deserializa', () => {
+  it('cambiar el byte 0 (wave) afecta el sonido reproducido', () => {
+    const vm = createVM(`
+SONIDO 0
+ONDA TRI
+ENV 0,1,12,2
+NOTA DO5 4
+FIN
+PROGRAMA
+10 EN CUADRO IR 105
+105 STR $RSON,0,0,3
+110 SON 0,0
+115 RET
+`);
+    step(vm);
+    expect(vm.synth.sounds[0].wave).toBe('SEN');
+    expect(vm.synth.dirtySounds[0]).toBe(0);
+  });
+
+  it('cambiar el ticks de un step ajusta totalTicks', () => {
+    const vm = createVM(`
+SONIDO 0
+ONDA SEN
+ENV 0,1,12,2
+NOTA DO5 4
+NOTA SOL5 6
+FIN
+PROGRAMA
+10 EN CUADRO IR 105
+105 STR $RSON,0,10,12
+110 SON 0,0
+115 RET
+`);
+    step(vm);
+    expect(vm.synth.sounds[0].steps[0].ticks).toBe(12);
+    expect(vm.synth.sounds[0].totalTicks).toBe(12 + 6);
+  });
+
+  it('STR fuera del slotMax es no-op silente', () => {
+    const vm = createVM(`
+SONIDO 0
+ONDA PUL
+ENV 0,1,12,2
+NOTA DO5 4
+FIN
+PROGRAMA
+10 EN CUADRO IR 105
+105 STR $RSON,0,9999,42
+110 SON 0,0
+115 RET
+`);
+    expect(() => step(vm)).not.toThrow();
+    expect(vm.synth.sounds[0].wave).toBe('PUL');
   });
 });
