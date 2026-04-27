@@ -1,4 +1,4 @@
-# RetroVM — Plan del editor web (Hito 9)
+# RollitoVM — Plan del editor web (Hito 9)
 
 > Reemplazar la página single-canvas actual por una IDE en el navegador para
 > escribir, probar y compartir programas `.retro` sin salir del browser.
@@ -28,7 +28,7 @@ Este hito convierte la página en una IDE minimal pero completa.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ RetroVM IDE                                          [docs] [tutorial]│
+│ RollitoVM IDE                                          [docs] [tutorial]│
 ├──────────────────────────────────────────────────────────────────────┤
 │ [Ejemplo: serpiente ▾] [Abrir...] [Guardar] [▶ Correr]  Lib: [Pal] [Spr] [Son] [Map]│
 ├────────────────────────────────────┬─────────────────────────────────┤
@@ -346,13 +346,13 @@ imports a `..`).
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>RetroVM — IDE</title>
+    <title>RollitoVM — IDE</title>
     <link rel="stylesheet" href="./style.css" />
     <link rel="stylesheet" href="./ide.css" />
   </head>
   <body>
     <header class="ide-header">
-      <h1>RetroVM</h1>
+      <h1>RollitoVM</h1>
       <nav>
         <a href="/docs/REFERENCIA.html" target="_blank">Referencia</a>
         <a href="/docs/TUTORIAL.html" target="_blank">Tutorial</a>

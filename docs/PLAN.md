@@ -1,4 +1,4 @@
-# RetroVM — Plan de Diseño
+# RollitoVM — Plan de Diseño
 
 > Una máquina virtual estilo "revista de juegos de los 80" para el navegador.
 > Programás en líneas cortas (≤ 32 caracteres) con mnemónicos en español
@@ -8,7 +8,7 @@
 
 ## 1. Visión y filosofía
 
-RetroVM busca recrear el placer de tipear un programa BASIC publicado en una
+RollitoVM busca recrear el placer de tipear un programa BASIC publicado en una
 revista de los 80 y verlo correr. Apuntamos a juegos pequeños (plataformas
 simples, puzzles, arcades de un nivel) escritos en un lenguaje propio,
 deliberadamente austero, con mnemónicos cortos en español.
@@ -17,7 +17,7 @@ Las decisiones de diseño se ordenan según estas prioridades, en orden
 descendente. **Cuando una prioridad superior choca con una inferior, gana
 la superior, sin discusión**:
 
-1. **Performance del intérprete**. RetroVM tiene que correr a 60 fps en
+1. **Performance del intérprete**. RollitoVM tiene que correr a 60 fps en
    notebooks modestas y en celulares de gama media. Toda decisión que
    amenace ese objetivo se rechaza, aunque cueste fidelidad al hardware
    ficticio que evocamos.
@@ -30,7 +30,7 @@ la superior, sin discusión**:
    sonar idéntico a un SID.
 6. **Testabilidad**: el VM es determinista y se puede correr fuera del DOM.
 
-Lo que **no** es RetroVM: un emulador fiel del C64 ni del NES, una
+Lo que **no** es RollitoVM: un emulador fiel del C64 ni del NES, una
 herramienta general de gamedev, ni un motor competitivo con Pico-8. Es un
 juguete deliberado, optimizado para que un juego escrito en su lenguaje se
 sienta retro y corra rápido — en ese orden.
@@ -62,7 +62,7 @@ plumazo (ver §11).
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                      RetroVM (JS)                        │
+│                      RollitoVM (JS)                        │
 │                                                          │
 │  ┌────────────┐   ┌────────────┐   ┌─────────────────┐   │
 │  │  Cargador  │──▶│   Parser   │──▶│   Compilador    │   │
@@ -215,7 +215,7 @@ dimensión inválida → error en carga.
 
 ### 6.2. Patrones y actores (1:1 por defecto)
 
-RetroVM mantiene **32 slots** que combinan imagen ("patrón") y estado
+RollitoVM mantiene **32 slots** que combinan imagen ("patrón") y estado
 de actor (posición, velocidad, visibilidad, gravedad). Por defecto, el
 sprite/actor n usa el patrón n (relación 1:1). Si querés varios actores
 con la misma imagen (8 monedas, 4 enemigos iguales), usás:
@@ -252,7 +252,7 @@ no en el lenguaje del VM, por razones obvias de performance.
 
 ## 7. Subsistema de sonido (inspirado en SID, no emulado)
 
-**Decisión clave**: RetroVM no emula a nivel de muestra. Cada canal es
+**Decisión clave**: RollitoVM no emula a nivel de muestra. Cada canal es
 un `OscillatorNode` + `GainNode` de Web Audio API, controlado por
 `AudioParam` automatizado. El "sabor SID" viene de las formas de onda
 disponibles, las envolventes ADSR cortas y la ausencia de filtros
@@ -641,7 +641,7 @@ Idealmente cada uno cabe en menos de 60 líneas de programa.
 
 ### Reference Games — suite de validación end-to-end
 
-En paralelo a los 5 ejemplos didácticos, RetroVM define una suite de
+En paralelo a los 5 ejemplos didácticos, RollitoVM define una suite de
 **tres reference games** que actúan como prueba de sistema integral.
 No son demos pedagógicas: son los juegos más exigentes que el VM debe
 correr a 60 fps cumpliendo el presupuesto del §11.9. Cuando los tres
@@ -664,7 +664,7 @@ los Hitos 3–6.
 ## 14. Estructura de carpetas
 
 ```
-retro-vm/
+rollito-vm/
 ├── src/
 │   ├── core/
 │   │   ├── vm.js
@@ -786,7 +786,7 @@ El proyecto está listo para compartir cuando:
   array de bitmaps 8×8 hardcodeado, no un sprite cargable.
 - **Persistencia**: por ahora, ninguna. Si hace falta, agregamos `GUA n`
   y `CAR n` con `localStorage`.
-- **Distribución**: aspiramos a un único `retro-vm.js` embedible. Se
+- **Distribución**: aspiramos a un único `rollito-vm.js` embedible. Se
   decide al llegar al Hito 9.
 - **Mobile**: el target principal es desktop. Mobile es nice-to-have
   pero no parte del DoD.

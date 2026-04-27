@@ -35,7 +35,7 @@ sel.addEventListener('change', () => {
 function render(key) {
   const doc = DOCS[key];
   if (!doc) return;
-  document.title = `RetroVM — ${doc.title}`;
+  document.title = `RollitoVM — ${doc.title}`;
   // marked.parse devuelve HTML. Los .md no tienen contenido del usuario,
   // así que es seguro inyectarlo (sin necesidad de DOMPurify).
   document.getElementById('docs-content').innerHTML = marked.parse(doc.md);

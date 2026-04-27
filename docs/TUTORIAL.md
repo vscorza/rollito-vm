@@ -35,7 +35,7 @@ que cubre 256×160 (centrado en pantalla con un margen para el HUD).
 
 ## 2. El esqueleto del archivo
 
-Cada juego en RetroVM empieza con un header y un bloque `PROGRAMA`.
+Cada juego en RollitoVM empieza con un header y un bloque `PROGRAMA`.
 Empezá tu archivo así:
 
 ```

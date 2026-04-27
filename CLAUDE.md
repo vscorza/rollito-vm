@@ -1,10 +1,10 @@
-# RetroVM — Guía para Claude
+# RollitoVM — Guía para Claude
 
 ## Proyecto
 
-RetroVM es una máquina virtual estilo "revista de juegos de los 80" para el
+RollitoVM es una máquina virtual estilo "revista de juegos de los 80" para el
 navegador. El usuario escribe juegos en un lenguaje propio con mnemónicos en
-español (≤ 32 caracteres por línea); RetroVM los corre a 60 fps sobre HTML
+español (≤ 32 caracteres por línea); RollitoVM los corre a 60 fps sobre HTML
 canvas + Web Audio. **El diseño completo vive en
 [docs/PLAN.md](docs/PLAN.md); la referencia del lenguaje en
 [docs/REFERENCIA.md](docs/REFERENCIA.md). Esos dos archivos son la fuente
@@ -113,7 +113,7 @@ está mal y hay que reconciliarlos.
 - Frameworks UI (React, Vue, Svelte, etc.).
 - Bundlers exóticos. Vite alcanza.
 - Tipos (TypeScript, Flow, JSDoc estricto). El plan no los pide.
-- Dependencias pesadas — RetroVM debe poder distribuirse como un único
+- Dependencias pesadas — RollitoVM debe poder distribuirse como un único
   archivo JS embebible (Hito 9).
 - Código muerto "por si acaso" o abstracciones especulativas (YAGNI).
 - Backwards-compatibility hacks (renombres con `_unused`, comentarios

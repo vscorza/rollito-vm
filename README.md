@@ -1,15 +1,31 @@
-# RetroVM
+# RollitoVM
 
 Una máquina virtual estilo "revista de juegos de los 80" para el navegador.
 Programás en líneas cortas (≤ 32 caracteres) con mnemónicos en español
 y obtenés un juego de plataformas o puzzle 2D corriendo sobre HTML+JS.
 JavaScript puro, sin dependencias de runtime, deliberadamente austero.
 
+## La idea: código en papel
+
+La motivación de RollitoVM es **compartir juegos imprimiendo el código
+en papel**, al estilo de las revistas de juegos de los 80 (donde tipeabas
+listados de BASIC y los corrías). El medio impreso pensado es la
+plataforma editorial **[Rollito](https://www.instagram.com/rollito_editorial/)** —
+fanzines/folletos publicados por entrega. La restricción de 32 caracteres
+por línea, los mnemónicos cortos en español y el formato plano (todo es
+texto: sprites, paletas, sonidos, mapas y programa) son justamente para
+que un juego entero entre cómodo en pocas páginas.
+
+Probá la versión web en
+**[vscorza.github.io/rollito-vm](https://vscorza.github.io/rollito-vm/)**.
+
 ## Estado
 
-Diseño completo, **Hito 0** (andamio) en curso. Ver la hoja de ruta en
+VM y editor IDE completos (Hitos 0–9). Ver hoja de ruta en
 [docs/PLAN.md §15](docs/PLAN.md). El lenguaje del VM está totalmente
-documentado en [docs/REFERENCIA.md](docs/REFERENCIA.md).
+documentado en [docs/REFERENCIA.md](docs/REFERENCIA.md). Tutorial
+paso-a-paso para construir un juego en
+[docs/TUTORIAL.md](docs/TUTORIAL.md).
 
 ## Quickstart
 

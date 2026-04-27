@@ -1,6 +1,6 @@
-# RetroVM — Referencia del Lenguaje
+# RollitoVM — Referencia del Lenguaje
 
-Lista canónica de todos los mnemónicos de RetroVM. Cada entrada incluye
+Lista canónica de todos los mnemónicos de RollitoVM. Cada entrada incluye
 firma, descripción breve y un ejemplo de ≤ 32 caracteres. Los ejemplos
 asumen que ya hay sprites/paletas/sonidos definidos en el archivo.
 
