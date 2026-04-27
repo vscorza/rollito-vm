@@ -84,6 +84,8 @@ export const OP = Object.freeze({
 
   // Sprites.
   SPR:     0x60,  // operand = arity (3 o 4)
+  SPRR:    0x67,  // SPRR n,x,y,ang,esc — rotación + escala (5 args, nearest neighbor)
+  SPRA:    0x68,  // SPRA n,x,y,a — alpha blend via tabla de mezcla (4 args)
   MOV:     0x61,
   VEL:     0x62,
   ANI:     0x63,

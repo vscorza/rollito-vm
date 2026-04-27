@@ -3,7 +3,9 @@ import { DEFAULT_PALETTE, createPaletteBank, setPalette } from '../render/palett
 import { parseProgram } from '../parser/parser.js';
 import { compile } from '../parser/compiler.js';
 import { createState, VAR_INDEX, DEFAULT_SEED, MEM } from './memory.js';
-import { createSpriteState, advanceActors, renderActors } from './sprites.js';
+import {
+  createSpriteState, advanceActors, renderActors, makeDefaultBlendTable,
+} from './sprites.js';
 import {
   createMapState, setMap, prerenderMap,
   actorCollidesMap as mapsActorCollidesMap,
@@ -51,6 +53,11 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
     codeMem: new Uint8Array(MEM.CODE.size),
     sonMem: new Uint8Array(MEM.SON.size),
     freeMem: new Uint8Array(MEM.FREE.size),
+    // Tabla de blend (BLEND_TABLE) para SPRA/SPRR con alpha. 256 bytes
+    // indexados por (src<<4)|dst → índice de paleta resultante.
+    // Default: promedio (src+dst)/2; reemplazable cargando bytes en
+    // freeMem y copiando con MEMCPY (futuro: MMIO 0x0B400).
+    blendTable: makeDefaultBlendTable(),
   };
   // Permite que el synth sepa qué buffer de bytes re-deserializar
   // cuando STR(SON,...) marca un slot como dirty (v2-C).

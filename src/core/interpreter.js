@@ -24,7 +24,7 @@ import {
   F_X, F_Y, F_VX, F_VY, F_FLAGS, F_ANI_A, F_ANI_B, F_ANI_STATE,
   F_PHYS_MAP, F_PHYS_GRA, F_LIM_X1, F_LIM_Y1, F_LIM_X2, F_LIM_Y2,
   FLAG_HIDDEN, FLAG_ON_GROUND, FLAG_LIM_ACTIVE,
-  drawPattern, aabbCollide, actorDistance,
+  drawPattern, drawPatternAffine, drawPatternAlpha, aabbCollide, actorDistance,
 } from './sprites.js';
 import {
   setSolid, blitMap, readTile, setActiveBackground,
@@ -366,6 +366,25 @@ export function runFromBytecode(state, vmRef, code, constants, startPc) {
         const n = stack[--sp];
         const pat = vmRef.spriteState.patterns[n];
         if (pat) drawPattern(vmRef.fb, pat, x, y, (f & 1) !== 0, (f & 2) !== 0);
+        pc++; break;
+      }
+      case OP.SPRR: {
+        const esc = stack[--sp] & 0xff;
+        const ang = stack[--sp] & 0xff;
+        const y = stack[--sp];
+        const x = stack[--sp];
+        const n = stack[--sp];
+        const pat = vmRef.spriteState.patterns[n];
+        if (pat) drawPatternAffine(vmRef.fb, pat, x, y, ang, esc, 0, vmRef.blendTable);
+        pc++; break;
+      }
+      case OP.SPRA: {
+        const a = stack[--sp] & 0x0f;
+        const y = stack[--sp];
+        const x = stack[--sp];
+        const n = stack[--sp];
+        const pat = vmRef.spriteState.patterns[n];
+        if (pat) drawPatternAlpha(vmRef.fb, pat, x, y, a, vmRef.blendTable);
         pc++; break;
       }
       case OP.MOV: {

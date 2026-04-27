@@ -987,3 +987,43 @@ archivos sin romper la API:
   "🔍 Memoria" en la toolbar abre un dump hex de las 8 regiones del
   memory map + disassembler para CODE. Botón ◀/▶ pagina de a 256 B.
   Construido sobre `readByte` y `disasm`.
+
+---
+
+## 19. Hardware target & RVM-32 ISA
+
+RollitoVM v2-A es bytecode interpretado en JS. Para llevarlo a silicio
+diseñamos **RVM-32**, una ISA RISC mínima (~26 opcodes, 32-bit fijo,
+16 registros) con coprocesadores fijos para gráficos y audio
+accedidos vía MMIO. El objetivo es FPGA económica (Lattice ECP5 25F,
+~$15-20) + algunos chips off-the-shelf (DAC audio I2S, MCU input).
+
+**Spec completa**: [RVM32-ISA.md](RVM32-ISA.md). Cubre encoding,
+opcodes, ABI, MMIO, BRAM budget para ECP5, BOM estimado, y cobertura
+del transpilador v2-A → RVM-32.
+
+**Estado actual** (toolchain JS):
+- ✅ ISA tabla + encode/decode → [src/asm/rvm32-isa.js](src/asm/rvm32-isa.js)
+- ✅ Intérprete RVM-32 en JS → [src/asm/interpreter.js](src/asm/interpreter.js)
+- ✅ Transpilador v2-A → RVM-32 (subset aritmético + control flow) →
+  [src/asm/v2a-to-rvm32.js](src/asm/v2a-to-rvm32.js)
+- ✅ Extensiones gráficas v2-A: `SPRR n,x,y,ang,esc` (rot+scale,
+  nearest neighbor) y `SPRA n,x,y,a` (alpha blending via tabla) en
+  el bytecode existente. Habilita rotation/scale/alpha en la IDE web
+  sin tocar el RVM-32.
+- ❌ Transpilador completo (memoria absoluta, CALL/RET, PAR/SIG,
+  builtins via MMIO, queries) → trabajo posterior.
+- ❌ RTL Verilog / cosim contra HW → trabajo posterior.
+
+**Tests**:
+- [tests/unit/sprr-spra.test.js](tests/unit/sprr-spra.test.js) — 12
+  tests de los rasterizadores affine + alpha.
+- [tests/unit/rvm32-isa.test.js](tests/unit/rvm32-isa.test.js) — 10
+  tests de encoding/decoding round-trip.
+- [tests/unit/rvm32-interp.test.js](tests/unit/rvm32-interp.test.js) —
+  11 tests del intérprete (ALU, branches, jumps, memoria).
+- [tests/unit/rvm32-transpile.test.js](tests/unit/rvm32-transpile.test.js)
+  — 8 tests de cosim contra v2-A (vars, aritmética, comparaciones,
+  arrays Mn, IF/ENT, IR).
+
+Total v1: **+41 tests** sobre los existentes (290 totales).

@@ -229,6 +229,38 @@ actor. Flag opcional: 1=flipX, 2=flipY, 3=ambos.
 20 SPR 5,100,50,1                 ; 16
 ```
 
+### `SPRR n,x,y,ang,esc`
+Dibujo del patrón `n` en `(x, y)` con **rotación** (`ang` 0..255 mapea
+0..360°) y **escala** (`esc` 0..255, donde 64 = 1.0×). Nearest-neighbor
+sampling — sin bilineal. El sprite rota alrededor del centro del bbox
+destino.
+
+- `ang=0` y `esc=64` equivale a `SPR n,x,y` (sin flip).
+- Para una versión con HW affine, este opcode mapea a `BLIT_SPR_AFFINE`
+  + 7 args MMIO (ver `docs/RVM32-ISA.md`).
+
+```
+10 SPRR 5,100,50,64,64            ; 90° escala 1x (20)
+20 SPRR 5,100,50,0,128             ; sin rot, escala 2x (21)
+30 SPRR 5,100,50,A,64              ; ang variable (19)
+```
+
+### `SPRA n,x,y,a`
+Dibujo del patrón `n` en `(x, y)` con **alpha**. `a` es 0..15:
+- `a = 0`: equivalente a `SPR n,x,y` (escribe directo, color 0
+  transparente).
+- `a > 0`: cada pixel no-transparente del patrón se mezcla con el FB
+  vía `BLEND_TABLE[(src<<4)|dst]` (256 bytes en `vmRef.blendTable`,
+  default = `(src+dst)/2`).
+
+Útil para sombras, glow, fade y efectos retro. La tabla puede
+sobreescribirse vía un MMIO futuro o cargada por el juego.
+
+```
+10 SPRA 5,100,50,0                ; sin blend (16)
+20 SPRA 5,100,50,1                ; blend default (16)
+```
+
 ### `MOV n,x,y`
 Posiciona el actor `n` y lo hace visible.
 

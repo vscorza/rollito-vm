@@ -33,7 +33,7 @@ export const KEYWORDS = new Set([
 // Hito 6: audio. Hito 7: ciclo de vida.
 export const BUILTINS = new Set([
   'BOR', 'PIN', 'REC', 'TXT',
-  'SPR', 'MOV', 'VEL', 'ANI', 'OCU', 'INV', 'PAT',
+  'SPR', 'SPRR', 'SPRA', 'MOV', 'VEL', 'ANI', 'OCU', 'INV', 'PAT',
   'MAP', 'FON', 'SOL', 'GRA', 'SAL', 'LIM',
   'SON', 'RUI', 'SIL',
   'CARNIV',

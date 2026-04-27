@@ -229,7 +229,9 @@ function emitCall(ctx, ast) {
     case 'REC': return emitFixed(ctx, ast, 5, OP.REC);
     case 'TXT': return emitTxt(ctx, ast);
 
-    case 'SPR': return emitSpr(ctx, ast);
+    case 'SPR':  return emitSpr(ctx, ast);
+    case 'SPRR': return emitFixed(ctx, ast, 5, OP.SPRR);
+    case 'SPRA': return emitFixed(ctx, ast, 4, OP.SPRA);
     case 'MOV': return emitFixed(ctx, ast, 3, OP.MOV);
     case 'VEL': return emitFixed(ctx, ast, 3, OP.VEL);
     case 'ANI': return emitFixed(ctx, ast, 4, OP.ANI);

@@ -192,3 +192,156 @@ export function actorDistance(spriteState, s1, s2) {
   const dx = cx1 - cx2, dy = cy1 - cy2;
   return Math.sqrt(dx * dx + dy * dy) | 0;
 }
+
+// =====================================================================
+// drawPatternAffine — sprite con rotación + escala (nearest neighbor).
+//
+// El usuario provee ang (0..255 = 0..360°) y esc (1..255, 64 = 1.0x).
+// Internamente computamos los 4 coeficientes 8.8 del map inverso:
+//   sx = (dx - cx) * a + (dy - cy) * b + ox
+//   sy = (dx - cx) * c + (dy - cy) * d + oy
+//
+// Donde (cx, cy) es el centro del sprite (w/2, h/2) y (a..d) son los
+// coeficientes de la matriz inversa de rotación * escala. Para
+// rotación R y escala S, M = S*R y M^-1 = (1/S) * R^-1. Como R es
+// ortogonal, R^-1 = R^T.
+//
+// El bounding box destino se aproxima conservadoramente como un cuadro
+// de lado max(w, h) * scale * sqrt(2). Para evitar Math.sqrt corrido
+// usamos un bound suelto: 2 * max(w, h) * (esc / 64), capeado a la
+// pantalla.
+//
+// Anchor: el sprite se rota alrededor de su centro y se posiciona con
+// (x, y) = top-left del bounding box destino. Para alinear con el
+// SPR clásico (que usa top-left del sprite no rotado), el caller debe
+// pasar (x, y) ya pre-ajustados (compensando el "crecimiento" del bbox).
+//
+// El espíritu de la GPU futura es nearest-neighbor: si el coordenada
+// muestrada (sx, sy) cae fuera del rectángulo del patrón, el pixel
+// se descarta (transparent). Si dentro y color != 0, se escribe.
+// Si alpha > 0, se aplica blend table.
+// =====================================================================
+
+const TRIG_LUT_SIZE = 256;
+const TRIG_LUT = new Int16Array(TRIG_LUT_SIZE);
+for (let i = 0; i < TRIG_LUT_SIZE; i++) {
+  // 8.8 fixed point: 256 = 1.0
+  TRIG_LUT[i] = Math.round(Math.sin((i / TRIG_LUT_SIZE) * Math.PI * 2) * 256);
+}
+function lutSin(angU8) { return TRIG_LUT[angU8 & 0xff]; }
+function lutCos(angU8) { return TRIG_LUT[(angU8 + 64) & 0xff]; }
+
+export function drawPatternAffine(fb, pat, x, y, angU8, escU8, alpha, blendTable) {
+  const w = pat.w, h = pat.h, pixels = pat.pixels;
+  if (escU8 <= 0) return;
+  // Inverse coefficients in 16.16 fixed point.
+  // forward: sx = M00*X + M01*Y, sy = M10*X + M11*Y, M = S*R.
+  // For R(ang) = [[cos, -sin], [sin, cos]] and uniform S = esc/64:
+  //   forward: M00 = (esc/64)*cos, M01 = -(esc/64)*sin
+  //            M10 = (esc/64)*sin, M11 = (esc/64)*cos
+  //   inverse: invDet = 1 / (esc/64)^2 = 4096/esc^2
+  //            iM = invDet * [[ M11, -M01 ], [ -M10, M00 ]]
+  //                = (1/(esc/64)) * [[ cos, sin ], [ -sin, cos ]]
+  //                = (64/esc) * [[ cos, sin ], [ -sin, cos ]]
+  // En 16.16:  iM00 = (cos8.8 * 64 / esc) << 8 = cos8.8 << 8 / esc * 64
+  // Nota: usamos enteros, sin Math.round más allá del LUT.
+  const cosA = lutCos(angU8);  // 8.8 signed
+  const sinA = lutSin(angU8);
+  // (64 / esc) en 16.16:  (64 << 16) / esc
+  const invScale = ((64 << 16) / escU8) | 0;
+  // iM* en 16.16: (cosA / 256) * (64/esc) * 65536  → cosA * invScale / 256
+  const iM00 = (cosA * invScale) >> 8;
+  const iM01 = (sinA * invScale) >> 8;
+  const iM10 = (-sinA * invScale) >> 8;
+  const iM11 = (cosA * invScale) >> 8;
+
+  // Bounding box destino: estimación conservadora.
+  const r = (Math.max(w, h) * escU8) >> 5;  // max(w,h) * (esc/64) * 2 ≈ diagonal
+  const cx = (w >> 1), cy = (h >> 1);
+  const bx0 = Math.max(0, x - r);
+  const bx1 = Math.min(WIDTH, x + r);
+  const by0 = Math.max(0, y - r);
+  const by1 = Math.min(HEIGHT, y + r);
+
+  for (let dy = by0; dy < by1; dy++) {
+    const ddy = dy - y;
+    for (let dx = bx0; dx < bx1; dx++) {
+      const ddx = dx - x;
+      // (sx, sy) = iM * (ddx, ddy) en 16.16.
+      const sxf = iM00 * ddx + iM01 * ddy;
+      const syf = iM10 * ddx + iM11 * ddy;
+      // De 16.16 a int + offset al centro del sprite.
+      const sx = (sxf >> 16) + cx;
+      const sy = (syf >> 16) + cy;
+      if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
+      const c = pixels[sy * w + sx];
+      if (c === 0) continue;
+      const fbIdx = dy * WIDTH + dx;
+      if (alpha === 0 || !blendTable) {
+        fb[fbIdx] = c;
+      } else {
+        // BLEND_TABLE indexada por (src << 4) | dst, ambos 4-bit.
+        const dst = fb[fbIdx] & 0x0f;
+        fb[fbIdx] = blendTable[((c & 0x0f) << 4) | dst];
+      }
+    }
+  }
+}
+
+// =====================================================================
+// drawPatternAlpha — SPR clásico (sin rotar) con blend table opcional.
+//
+// alpha=0 es equivalente a drawPattern.
+// alpha>0 aplica blendTable[(src<<4)|dst] en cada pixel no transparente.
+// =====================================================================
+
+export function drawPatternAlpha(fb, pat, x, y, alpha, blendTable) {
+  const w = pat.w, h = pat.h, pixels = pat.pixels;
+  let py0 = 0, py1 = h, px0 = 0, px1 = w;
+  if (y < 0) py0 = -y;
+  if (y + h > HEIGHT) py1 = HEIGHT - y;
+  if (x < 0) px0 = -x;
+  if (x + w > WIDTH) px1 = WIDTH - x;
+  if (py0 >= py1 || px0 >= px1) return;
+  const useBlend = alpha !== 0 && blendTable;
+  for (let py = py0; py < py1; py++) {
+    const fy = y + py;
+    const fbRow = fy * WIDTH;
+    const srcRow = py * w;
+    for (let px = px0; px < px1; px++) {
+      const fx = x + px;
+      const c = pixels[srcRow + px];
+      if (c === 0) continue;
+      const fbIdx = fbRow + fx;
+      if (useBlend) {
+        const dst = fb[fbIdx] & 0x0f;
+        fb[fbIdx] = blendTable[((c & 0x0f) << 4) | dst];
+      } else {
+        fb[fbIdx] = c;
+      }
+    }
+  }
+}
+
+// =====================================================================
+// makeDefaultBlendTable — tabla de blend "darken 50%" por defecto.
+//
+// Output[(src << 4) | dst] = índice de paleta resultante de mezclar
+// src y dst al 50%. Sin acceso a las paletas RGB acá, usamos una
+// heurística: el color de mayor índice (más claro en la default
+// PICO-8 palette) se "oscurece" hacia el de menor índice. Para
+// sombras, el caller puede instalar una tabla custom usando
+// `STR $RPAL,blendSlot,...` o vía un nuevo MMIO en el futuro.
+//
+// Default pragmático: out = (src + dst) >> 1.
+// =====================================================================
+
+export function makeDefaultBlendTable() {
+  const t = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) {
+    const src = (i >> 4) & 0x0f;
+    const dst = i & 0x0f;
+    t[i] = (src + dst) >> 1;
+  }
+  return t;
+}
