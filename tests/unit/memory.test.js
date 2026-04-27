@@ -199,16 +199,17 @@ PROGRAMA
     expect(vm.state.vars[VAR_INDEX.B]).toBe(200);
   });
 
-  it('LDM en CODE retorna 0 (codeMem inicializado a ceros)', () => {
+  it('LDM en CODE devuelve los bytes del bytecode emitido (v2-A)', () => {
     const vm = createVM(`PROGRAMA
 10 EN CUADRO IR 105
 105 A=LDM(0)
-110 B=LDM(100)
-115 RET
+110 RET
 `);
     step(vm);
-    expect(vm.state.vars[VAR_INDEX.A]).toBe(0);
-    expect(vm.state.vars[VAR_INDEX.B]).toBe(0);
+    // El primer word emitido empieza con LDI (0x10) — el primer arg
+    // que se empuja al stack para LDM(0) en la línea 105. v2-A garantiza
+    // que codeMem refleja palabras de 32 bits del programa compilado.
+    expect(vm.state.vars[VAR_INDEX.A]).toBe(0x10);
   });
 
   it('STATE: LDM lee bytes de las variables', () => {

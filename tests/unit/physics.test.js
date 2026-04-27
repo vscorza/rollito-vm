@@ -11,6 +11,7 @@ import {
   createMapState, setMap, setSolid, actorCollidesMap,
 } from '../../src/core/maps.js';
 import { createInputState } from '../../src/core/input.js';
+import { runFromBytecode } from '../../src/core/interpreter.js';
 import { PIXELS } from '../../src/render/framebuffer.js';
 
 function makePattern(w, h, color) {
@@ -41,12 +42,8 @@ function build(source) {
 }
 
 function run(c, fromLine) {
-  let pc = c.lineToIdx[fromLine];
-  let budget = 1_000_000;
-  while (pc >= 0 && pc < c.program.length) {
-    pc = c.program[pc](pc, c.state);
-    if (--budget <= 0) throw new Error('budget overrun');
-  }
+  const pc = c.lineToIdx[fromLine];
+  runFromBytecode(c.state, c.vmRef, c.code, c.constants, pc);
 }
 
 const PHYS = { actorCollidesMap };

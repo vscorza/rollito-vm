@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseProgram } from '../../src/parser/parser.js';
 import { compile } from '../../src/parser/compiler.js';
 import { createState, VAR_INDEX } from '../../src/core/memory.js';
+import { runFromBytecode } from '../../src/core/interpreter.js';
 import {
   createSpriteState, ACTOR_FIELDS,
   F_X, F_Y, F_VX, F_VY, F_FLAGS, F_ANI_A, F_ANI_B,
@@ -32,14 +33,9 @@ function build(source, withSprites = []) {
 }
 
 function run(c, fromLine) {
-  const { program, lineToIdx, state } = c;
-  let pc = lineToIdx[fromLine];
+  const pc = c.lineToIdx[fromLine];
   expect(pc).toBeDefined();
-  let budget = 1_000_000;
-  while (pc >= 0 && pc < program.length) {
-    pc = program[pc](pc, state);
-    if (--budget <= 0) throw new Error('budget overrun');
-  }
+  runFromBytecode(c.state, c.vmRef, c.code, c.constants, pc);
 }
 
 describe('SPRITE block parsing', () => {

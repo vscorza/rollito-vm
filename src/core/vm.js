@@ -13,6 +13,7 @@ import {
   createSynth, loadSound, tickSynthHeadless, updateSilenceFlag,
   serializeSoundToBytes, TOTAL_CHANNELS,
 } from '../audio/synth.js';
+import { runFromBytecode } from './interpreter.js';
 
 // VM headless con ciclo de vida completo (Hito 7).
 //
@@ -86,9 +87,9 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
   const compiled = compile(parsed, vmRef);
   const cuaIdx = VAR_INDEX.CUA;
 
-  function fire(handlerIdx) {
-    if (handlerIdx === undefined) return;
-    runFromIdx(handlerIdx, compiled.program, state);
+  function fire(handlerPc) {
+    if (handlerPc === undefined) return;
+    runFromBytecode(state, vmRef, compiled.code, compiled.constants, handlerPc);
   }
 
   function dispatchAudioEvents() {
@@ -178,7 +179,9 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
     sonMem: vmRef.sonMem,
     freeMem: vmRef.freeMem,
     codeMem: vmRef.codeMem,
-    program: compiled.program,
+    code: compiled.code,
+    codeLength: compiled.codeLength,
+    constants: compiled.constants,
     handlers: compiled.handlers,
     lineToIdx: compiled.lineToIdx,
     header: parsed.header,
@@ -188,16 +191,5 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
   };
 }
 
-function runFromIdx(startIdx, program, state) {
-  state.callSp = 0;
-  state.loopSp = 0;
-  let pc = startIdx;
-  const len = program.length;
-  let budget = 1_000_000;
-  while (pc >= 0 && pc < len) {
-    pc = program[pc](pc, state);
-    if (--budget <= 0) {
-      throw new Error('handler excedió presupuesto de instrucciones por cuadro');
-    }
-  }
-}
+// La closure runFromIdx vive ahora como `runFromBytecode` en
+// src/core/interpreter.js (v2-A).

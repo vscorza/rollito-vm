@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseProgram } from '../../src/parser/parser.js';
 import { compile } from '../../src/parser/compiler.js';
 import { createState, VAR_INDEX } from '../../src/core/memory.js';
+import { runFromBytecode } from '../../src/core/interpreter.js';
 import { PIXELS, WIDTH } from '../../src/render/framebuffer.js';
 
 function build(source) {
@@ -13,14 +14,9 @@ function build(source) {
 }
 
 function run(compiled, fromLine) {
-  const { program, lineToIdx, state, fbRef } = compiled;
-  let pc = lineToIdx[fromLine];
+  const pc = compiled.lineToIdx[fromLine];
   expect(pc).toBeDefined();
-  let budget = 1_000_000;
-  while (pc >= 0 && pc < program.length) {
-    pc = program[pc](pc, state, fbRef.fb);
-    if (--budget <= 0) throw new Error('budget overrun');
-  }
+  runFromBytecode(compiled.state, compiled.fbRef, compiled.code, compiled.constants, pc);
 }
 
 describe('compile + run', () => {

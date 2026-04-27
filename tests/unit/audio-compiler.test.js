@@ -6,6 +6,7 @@ import { createSpriteState } from '../../src/core/sprites.js';
 import { createMapState } from '../../src/core/maps.js';
 import { createInputState } from '../../src/core/input.js';
 import { createSynth, loadSound } from '../../src/audio/synth.js';
+import { runFromBytecode } from '../../src/core/interpreter.js';
 import { PIXELS } from '../../src/render/framebuffer.js';
 
 function build(source) {
@@ -26,12 +27,8 @@ function build(source) {
 }
 
 function run(c, fromLine) {
-  let pc = c.lineToIdx[fromLine];
-  let budget = 1_000_000;
-  while (pc >= 0 && pc < c.program.length) {
-    pc = c.program[pc](pc, c.state);
-    if (--budget <= 0) throw new Error('budget overrun');
-  }
+  const pc = c.lineToIdx[fromLine];
+  runFromBytecode(c.state, c.vmRef, c.code, c.constants, pc);
 }
 
 describe('SONIDO block parsing', () => {

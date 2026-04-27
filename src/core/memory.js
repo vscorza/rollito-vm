@@ -99,6 +99,9 @@ const STATE_OFF_CALLSTACK  = 0x2520;
 const STATE_OFF_INPUT_BTN  = 0x2560;
 const STATE_OFF_INPUT_KEYS = 0x2568;
 
+// Profundidad del stack de evaluación del intérprete bytecode (v2-A).
+export const EVAL_STACK_DEPTH = 256;
+
 export function createState(seed = DEFAULT_SEED) {
   return {
     vars: new Int32Array(VAR_COUNT),
@@ -107,6 +110,8 @@ export function createState(seed = DEFAULT_SEED) {
     loopSp: 0,
     callStack: new Int32Array(CALL_DEPTH),
     callSp: 0,
+    evalStack: new Int32Array(EVAL_STACK_DEPTH),
+    evalSp: 0,
     halted: false,
     started: false,
     paused: false,

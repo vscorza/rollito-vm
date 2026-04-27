@@ -500,9 +500,15 @@ puede inlinar.
 512 KB (§18) no se materializa como un único `ArrayBuffer`. Cada región
 sigue viviendo en su typed array nativo (sprites, mapas, paletas,
 framebuffer); las primitivas `LDM`/`STM`/`LDR`/`STR` traducen una
-dirección lógica a la región y offset físico. Esto preserva la
-performance de las closures (no hay copia entre buffers) y al mismo
+dirección lógica a la región y offset físico. Esto deja la región CODE
+respaldada por bytes reales (el bytecode emitido en v2-A) y al mismo
 tiempo da al usuario una vista plana y direccionable de toda la VM.
+
+> **v2-A**: el compilador emite bytecode 32-bit a `vmRef.codeMem` y un
+> intérprete (`src/core/interpreter.js`) lo ejecuta. La regla de "cero
+> allocations en el hot path" se mantiene (el stack de evaluación es
+> un `Int32Array` reusado), pero el presupuesto de **≤ 4 ms / cuadro**
+> queda en pausa hasta que se mida con bytecode real. Detalles en §18.1.
 
 ### 11.2. Cero allocations en el hot path
 
@@ -812,34 +818,40 @@ programador a través de las primitivas `LDM`/`STM`, `LDW`/`STW`,
 
 ### 18.1. Tamaño de palabra y encoding de instrucciones
 
-La memoria lógica se direcciona por **byte** (necesario para `LUI` +
-offset). La **palabra natural** es de **32 bits**: coincide con el
-`Int32Array` de variables, con el ancho del PRNG xorshift32 y con un
-encoding RISC clásico. Cada instrucción ocupa 1 word fijo (4 bytes).
+La memoria lógica se direcciona por **byte**, pero la **palabra natural**
+es de **32 bits**: coincide con el `Int32Array` de variables, con el ancho
+del PRNG xorshift32 y con la unidad de fetch del intérprete. Cada
+instrucción ocupa 1 word fijo (4 bytes).
 
 ```
  31                                          8 7         0
 +--------------------------------------------+-----------+
-|                  args (24 bits)            |  opcode   |
+|                  operand (24 bits)         |  opcode   |
 +--------------------------------------------+-----------+
 ```
 
-Los 24 bits superiores se interpretan según el opcode:
+Un opcode = 8 bits → hasta 256 instrucciones; hoy emitimos ~80. El
+operand de 24 bits se interpreta según el opcode:
 
-| Tipo | Layout                                      | Uso                       |
-|------|---------------------------------------------|---------------------------|
-| R    | `rd(5) | rs(5) | rt(5) | func(9)`           | Reg-a-reg (`ADD`, `MUL`)  |
-| I    | `rd(5) | rs(5) | imm(14)`                   | Inmediato (`ADDI`)        |
-| M    | `rd(5) | imm(16) | _(3)`                    | Memoria absoluta (`LDM`)  |
-| X    | `rd(5) | reg(3) | slot(5) | off(8) | _(3)`  | Memoria indexada (`LDR`)  |
+| Forma            | Uso                                                          |
+|------------------|--------------------------------------------------------------|
+| ignorado         | Aritmética/lógica/memoria sin args inmediatos (`ADD`, `LDM`) |
+| signed 24-bit    | Literal inmediato (`LDI`)                                    |
+| unsigned 24-bit  | Bytecode PC absoluto para `JMP`, `JZ`, `JNZ`, `CALL`         |
+| índice (5 bits)  | Variable (`LDV`, `STV`, `ADDV`, ...)                         |
+| índice (3 bits)  | Arreglo Mn (`LDA`, `STA`, ...)                               |
+| arity            | Builtins variádicos (`SOL`, `TXT`, `SPR`)                    |
+| eje              | `INV` (0=X, 1=Y)                                             |
+| pool index       | `LDC` para strings y enteros >24-bit                         |
 
-Un opcode = 8 bits → hasta 256 instrucciones. Hoy estamos en ~30, queda
-margen amplio.
+Los stacks runtime viven en `state`:
+- `evalStack` (`Int32Array(256)`): operands de expresiones y args.
+- `loopStack` (4 ints/frame, profundidad 8): PAR/SIG.
+- `callStack` (16 ints): LLA/RET (PCs absolutos del bytecode).
 
-> **La encoding es ESPECIFICACIÓN, no implementación.** En v1 la VM
-> ejecuta closures (§11.1); el formato binario queda documentado para que
-> un usuario que imprima un programa entienda el "hardware" y para
-> habilitar v2-A (intérprete bytecode real) sin romper compatibilidad.
+> Tabla canónica de opcodes en [src/core/bytecode.js](src/core/bytecode.js).
+> Implementación del intérprete en
+> [src/core/interpreter.js](src/core/interpreter.js).
 
 ### 18.2. Mapa de memoria (512 KB = `0x80000` bytes)
 
@@ -857,9 +869,13 @@ margen amplio.
 
 Notas por región:
 
-- **CODE** no es byte-accesible en v1: lecturas devuelven 0, escrituras
-  son no-op silentes. `vmRef.codeMem` queda allocado en ceros para que
-  v2-A pueda activar bytecode real sin cambiar la API del `vmRef`.
+- **CODE** contiene el bytecode emitido por el compilador como una
+  vista `Uint32Array` sobre `vmRef.codeMem`. `LDM(addr)` en CODE
+  devuelve el byte correspondiente del bytecode (útil para
+  introspección/disassembly). `STM` en CODE escribe al buffer pero el
+  intérprete no relee opcodes de un word ya fetcheado dentro del mismo
+  `runFromBytecode`; v2-B (self-mod consistente) requiere ajustes
+  adicionales.
 - **STATE** mapea vars (`Int32Array`), arrays M0..M7, stacks de loop/call,
   actores y `inputState.buttons/keys` a un layout flat. Se accede en
   little-endian. La escritura está permitida pero no chequea
@@ -934,12 +950,13 @@ estructuras de v1 (codeMem, sonMem, magic register offsets, layout
 serializado) están dimensionadas para que activarlo sea cambiar pocos
 archivos sin romper la API:
 
-- **v2-A — Bytecode real**: el compilador emite words a `vmRef.codeMem`;
-  `runBytecode(pc)` hace `fetch → decode → execute`. La encoding ya
-  está fijada (§18.1). Habilita escribir un disassembler del .retro.
-- **v2-B — Self-modifying code**: con bytecode real, `STM` en CODE
-  re-define instrucciones en runtime. El intérprete debe re-decodear
-  cada fetch (no cachear).
+- **v2-A — Bytecode real**: ✅ **incluido en v1**. Compilador emite
+  words a `vmRef.codeMem`; `runFromBytecode` hace `fetch → decode →
+  execute`. Cumple §18.1. Disassembler básico via `disasm()` en
+  `bytecode.js`.
+- **v2-B — Self-modifying code**: con v2-A activo, `STM` en CODE ya
+  muta el buffer; queda especificar el modelo de visibilidad exacto
+  (re-fetch en cada salto vs. al próximo handler) y agregar tests.
 - **v2-C — Modificación de sonidos byte a byte**: ✅ **incluido en v1**.
   `STR(SON, ...)` muta `sonMem` y marca el slot dirty; `SON n,c`
   re-deserializa desde los bytes antes de disparar. Layout flat en §18.4.
