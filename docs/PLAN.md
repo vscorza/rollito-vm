@@ -918,17 +918,26 @@ Hasta 190 steps por sonido (8 + 190·4 = 768). En v1 se serializa al
 cargar; modificar bytes con `STR(SON, ...)` no afecta la reproducción
 (v2-C agrega re-parseo en `SON n,c`).
 
-### 18.5. Magic registers reservados (v2-E)
+### 18.5. Magic registers (memory-mapped IO, v2-E)
 
-Direcciones dentro de STATE reservadas para "memory-mapped IO". En v1
-son zonas normales de bytes — no disparan efectos. v2-E las activa:
+Direcciones dentro de STATE que disparan acciones cuando se escriben
+con `STW`. Útiles para invocar el runtime sin builtins dedicados:
+empaquetar comandos como integers, escribirlos a una dirección, listo.
 
-| Offset (desde `STATE_BASE`) | Efecto al escribir (v2-E)         |
-|-----------------------------|-----------------------------------|
-| `0x600`                     | Silencia el canal `val`           |
-| `0x604`                     | `playSound(slot=val&0xf, ch=val>>4)` |
-| `0x700`                     | `CARNIV val` (cambio de nivel)    |
-| `0x800`                     | Re-blittea el fondo activo        |
+| Constante      | Dirección  | Acción al `STW val`                              |
+|----------------|-----------:|--------------------------------------------------|
+| `$MR_SILENCE`  | `0x0B000`  | `silenceChannel(val & 0xff)`                     |
+| `$MR_PLAY`     | `0x0B004`  | `playSound(slot = val & 0xf, ch = (val>>4)&0xf)` |
+| `$MR_NOISE`    | `0x0B008`  | `playNoise(slot = val & 0xf)`                    |
+| `$MR_CARNIV`   | `0x0B00C`  | Setea `NIV = val` y `pendingLevelLoad = true`    |
+| `$MR_REPAINT`  | `0x0B010`  | Marca el fondo activo `dirty` (fuerza re-prerender) |
+
+Reglas:
+- Sólo `STW` (32 bits) dispara la acción. `STM` byte-a-byte en este
+  rango es **no-op silente**.
+- Lectura (`LDM`/`LDW`) en este rango devuelve `0` — no hay backing
+  storage.
+- Direcciones dentro del rango pero no asignadas son no-op.
 
 ### 18.6. Side effects al escribir
 
@@ -969,10 +978,12 @@ archivos sin romper la API:
   descartó en v1: el lenguaje ya soporta enteros de 32 bits, así que
   `LDM(0x30000+i)` funciona sin overhead. La implementación quedaría
   pequeña si la demanda surge.
-- **v2-E — Memory-mapped IO**: registros mágicos en STATE (§18.5)
-  disparan efectos al escribir. Offsets ya reservados.
+- **v2-E — Memory-mapped IO**: ✅ **incluido en v1**. STW a 5 magic
+  registers (`$MR_SILENCE`, `$MR_PLAY`, `$MR_NOISE`, `$MR_CARNIV`,
+  `$MR_REPAINT`) dispara las acciones del runtime. Detalle en §18.5.
 - **v2-F — `MEMCPY` / `MEMSET`**: ✅ **incluido en v1**.
 - **v2-G — Constantes simbólicas (`$RPAL`, etc.)**: ✅ **incluido en v1**.
-- **v2-H — Memory inspector en la IDE**: panel en `web/editor/` que
-  dumpea bytes de cualquier rango durante el debug. Se construye sobre
-  `readByte` ya expuesto en v1.
+- **v2-H — Memory inspector en la IDE**: ✅ **incluido en v1**. Modal
+  "🔍 Memoria" en la toolbar abre un dump hex de las 8 regiones del
+  memory map + disassembler para CODE. Botón ◀/▶ pagina de a 256 B.
+  Construido sobre `readByte` y `disasm`.

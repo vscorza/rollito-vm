@@ -4,6 +4,7 @@ import { createRunner } from './editor/runner.js';
 import { initPaletteEditor, openPaletteEditor } from './editor/palette-editor.js';
 import { initSpriteEditor, openSpriteEditor } from './editor/sprite-editor.js';
 import { initSoundEditor, openSoundEditor } from './editor/sound-editor.js';
+import { initMemoryInspector, openMemoryInspector } from './editor/memory-inspector.js';
 import { initLibraryMenu, openLibraryMenu } from './editor/library-menu.js';
 
 // Los links del header apuntan al docs viewer (renderiza Markdown a HTML).
@@ -30,6 +31,7 @@ initPaletteEditor(editor);
 initSpriteEditor(editor);
 initSoundEditor(editor);
 initLibraryMenu(editor);
+initMemoryInspector(() => runner.getVm());
 
 // --- Selector de ejemplos --------------------------------------------
 const exampleSelect = document.getElementById('example-select');
@@ -146,6 +148,7 @@ fileInput.addEventListener('change', async () => {
 document.getElementById('open-pal-editor').addEventListener('click', openPaletteEditor);
 document.getElementById('open-spr-editor').addEventListener('click', openSpriteEditor);
 document.getElementById('open-snd-editor').addEventListener('click', openSoundEditor);
+document.getElementById('open-mem-inspector').addEventListener('click', openMemoryInspector);
 document.getElementById('open-lib').addEventListener('click', () => openLibraryMenu('palettes'));
 
 document.getElementById('save-file').addEventListener('click', () => {

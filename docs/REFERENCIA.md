@@ -643,31 +643,56 @@ nombres son case-insensitive.
 20 MEMSET $MAP_BASE,0,240         ; clear MAPA 0     (24)
 ```
 
-### 15.7. Casos borde
+### 15.7. Magic registers (memory-mapped IO)
+
+Direcciones dentro de STATE donde un `STW` dispara una acción del
+runtime en vez de escribir bytes. Útil para empaquetar comandos como
+integers.
+
+| Constante      | Dirección  | Acción al `STW val`                              |
+|----------------|-----------:|--------------------------------------------------|
+| `$MR_SILENCE`  | `0x0B000`  | Silencia el canal `val & 0xff`                   |
+| `$MR_PLAY`     | `0x0B004`  | `playSound(val & 0xf, (val>>4) & 0xf)`           |
+| `$MR_NOISE`    | `0x0B008`  | `playNoise(val & 0xf)`                           |
+| `$MR_CARNIV`   | `0x0B00C`  | Equivale a `CARNIV val` (cambia NIV)             |
+| `$MR_REPAINT`  | `0x0B010`  | Marca el fondo activo dirty                      |
+
+```
+10 STW $MR_CARNIV,2               ; saltar a NIV 2 (17)
+20 STW $MR_PLAY,16                ; sonido 0 en canal 1 (val=0x10) (19)
+30 STW $MR_REPAINT,0              ; refrescar fondo (18)
+```
+
+Reglas:
+- Sólo `STW` (32 bits) dispara la acción.
+- `STM` byte-a-byte en este rango es no-op silente.
+- Lectura (`LDM`/`LDW`) en este rango devuelve siempre `0`.
+
+### 15.8. Casos borde
 
 - Region/slot/offset fuera de rango → no-op silente (lecturas devuelven
   `0`).
 - Direcciones negativas o ≥ `0x80000` → no-op silente.
-- Escribir a CODE o a SON: no-op silente.
+- Escribir a CODE: muta los bytes del bytecode emitido (v2-A/v2-B).
 - Las paletas ocupan 64 bytes útiles (16 colores × 4 bytes RGBA),
   aunque el stride sea 1024 — escribir más allá del byte 63 dentro de
   un slot no afecta colores.
 
-### 15.8. Ejemplos completos
+### 15.9. Ejemplos completos
 
 **Recolorar un sprite por nivel** (de `games/camaleon.retro`):
 ```
 700 PAR I=0 A 63
-705 SI LDR(1,1,I)<>9 ENT 715
-710 STR 1,1,I,9+NIV
+705 SI LDR($RSPR,1,I)<>9 ENT 715
+710 STR $RSPR,1,I,9+NIV
 715 SIG
 720 RET
 ```
 
 **Construir un piso completo en el mapa**:
 ```
-750 MEMSET 0x18000,0,240
-755 PAR I=0 A 19:STR 2,0,220+I,2:SIG
+750 MEMSET $MAP_BASE,0,240
+755 PAR I=0 A 19:STR $RMAP,0,220+I,2:SIG
 760 RET
 ```
 

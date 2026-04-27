@@ -8,6 +8,8 @@
 //
 // 32 slots con margen para crecer. Total 128 bytes.
 
+import { playSound, playNoise, silenceChannel } from '../audio/synth.js';
+
 export const VAR_COUNT = 32;
 
 export const VAR_INDEX = (() => {
@@ -84,12 +86,13 @@ export const REGION_SON = 3;
 //   0x2560  inputBtn    (8 B)
 //   0x2568  inputKeys   (256 B)
 //   0x2668  flags+seed  (32 B reservados)
-//   0x2688..0x7FFF  reservado (incluye magic registers de v2-E)
+//   0x2688..0x2FFF  reservado
+//   0x3000..0x3FFF  magic registers (v2-E, write-triggered IO)
+//   0x4000..0x7FFF  reservado
 //
-// Magic registers reservados (no implementados en v1):
-//   STATE_BASE + 0x3000  silenceChannel (write canal)
-//   STATE_BASE + 0x3004  playSound      (write slot+canal empacados)
-//   STATE_BASE + 0x3008  carniv         (write nivel)
+// Magic registers (v2-E, docs/PLAN.md §18.5). Sólo `STW` (32 bits)
+// los dispara; `STM` byte-a-byte en este rango es no-op silente. La
+// lectura siempre devuelve 0 (no tienen backing storage).
 const STATE_OFF_VARS       = 0x0000;
 const STATE_OFF_ARRAYS     = 0x0080;
 const STATE_OFF_ACTORS     = 0x2080;
@@ -98,6 +101,15 @@ const STATE_OFF_LOOPSTACK  = 0x24A0;
 const STATE_OFF_CALLSTACK  = 0x2520;
 const STATE_OFF_INPUT_BTN  = 0x2560;
 const STATE_OFF_INPUT_KEYS = 0x2568;
+const STATE_OFF_MR_BASE    = 0x3000;
+const STATE_OFF_MR_END     = 0x4000;
+
+// Direcciones absolutas de los magic registers (= STATE.base + STATE_OFF_MR_*).
+export const MR_SILENCE = 0x08000 + 0x3000;  // STW val: silencia canal val&0xff
+export const MR_PLAY    = 0x08000 + 0x3004;  // STW val: playSound(val&0xf, (val>>4)&0xf)
+export const MR_NOISE   = 0x08000 + 0x3008;  // STW val: playNoise(val&0xf)
+export const MR_CARNIV  = 0x08000 + 0x300C;  // STW val: CARNIV val
+export const MR_REPAINT = 0x08000 + 0x3010;  // STW val (cualquiera): invalida pre-render del fondo activo
 
 // Profundidad del stack de evaluación del intérprete bytecode (v2-A).
 export const EVAL_STACK_DEPTH = 256;
@@ -156,7 +168,10 @@ export function readByte(state, vmRef, addr) {
   }
   // STATE
   if (addr < MEM.SPR.base) {
-    return readStateByte(state, vmRef, addr - MEM.STATE.base);
+    const stateOff = addr - MEM.STATE.base;
+    // Magic registers (v2-E): siempre 0, no tienen backing storage.
+    if (stateOff >= STATE_OFF_MR_BASE && stateOff < STATE_OFF_MR_END) return 0;
+    return readStateByte(state, vmRef, stateOff);
   }
   // SPR
   if (addr < MEM.MAP.base) {
@@ -193,7 +208,11 @@ export function writeByte(state, vmRef, addr, val) {
   }
   // STATE
   if (addr < MEM.SPR.base) {
-    writeStateByte(state, vmRef, addr - MEM.STATE.base, val);
+    const stateOff = addr - MEM.STATE.base;
+    // Magic registers (v2-E): byte writes son no-op silente — sólo se
+    // disparan via STW (writeWord) que ve la palabra completa.
+    if (stateOff >= STATE_OFF_MR_BASE && stateOff < STATE_OFF_MR_END) return;
+    writeStateByte(state, vmRef, stateOff, val);
     return;
   }
   // SPR
@@ -271,10 +290,49 @@ export function readWord(state, vmRef, addr) {
 }
 
 export function writeWord(state, vmRef, addr, val) {
+  // Magic registers (v2-E): un STW alineado dispara la acción asociada
+  // y no toca memoria. Lectura (LDW/LDM) en este rango devuelve 0.
+  const a = (addr | 0) & 0x7FFFF;
+  if (a >= MEM.STATE.base + STATE_OFF_MR_BASE &&
+      a <  MEM.STATE.base + STATE_OFF_MR_END) {
+    fireMagicRegister(state, vmRef, a, val | 0);
+    return;
+  }
   writeByte(state, vmRef, addr,     val        & 0xff);
   writeByte(state, vmRef, addr + 1, (val >>> 8)  & 0xff);
   writeByte(state, vmRef, addr + 2, (val >>> 16) & 0xff);
   writeByte(state, vmRef, addr + 3, (val >>> 24) & 0xff);
+}
+
+// Dispatcher de magic registers (v2-E). Sólo se invoca desde writeWord;
+// addr siempre cae en [STATE_BASE+0x3000, STATE_BASE+0x4000).
+function fireMagicRegister(state, vmRef, addr, val) {
+  switch (addr) {
+    case MR_SILENCE:
+      silenceChannel(vmRef.synth, val & 0xff);
+      return;
+    case MR_PLAY:
+      playSound(vmRef.synth, val & 0x0f, (val >>> 4) & 0x0f);
+      return;
+    case MR_NOISE:
+      playNoise(vmRef.synth, val & 0x0f);
+      return;
+    case MR_CARNIV:
+      state.vars[VAR_INDEX.NIV] = val | 0;
+      state.pendingLevelLoad = true;
+      return;
+    case MR_REPAINT: {
+      const idx = vmRef.mapState && vmRef.mapState.activeBackground;
+      if (idx !== undefined && idx >= 0) {
+        const m = vmRef.mapState.maps[idx];
+        if (m) m.dirty = true;
+      }
+      return;
+    }
+    default:
+      // Address dentro del rango pero no asignada — silente.
+      return;
+  }
 }
 
 // =====================================================================

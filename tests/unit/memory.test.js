@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createVM } from '../../src/core/vm.js';
-import { MEM, REGION_PAL, REGION_SPR, REGION_MAP, REGION_SON } from '../../src/core/memory.js';
+import { MEM, REGION_PAL, REGION_SPR, REGION_MAP, REGION_SON, writeWord } from '../../src/core/memory.js';
 import { VAR_INDEX } from '../../src/core/memory.js';
 import { OP, encode } from '../../src/core/bytecode.js';
 
@@ -393,6 +393,112 @@ PROGRAMA
 `);
     expect(() => step(vm)).not.toThrow();
     expect(vm.synth.sounds[0].wave).toBe('PUL');
+  });
+});
+
+describe('v2-E: magic registers (memory-mapped IO)', () => {
+  it('$MR_CARNIV: STW dispara CARNIV (NIV ← val, pendingLevelLoad)', () => {
+    const vm = createVM(`PROGRAMA
+10 EN CUADRO IR 100
+100 STW $MR_CARNIV,3
+110 RET
+`);
+    step(vm);
+    expect(vm.state.vars[VAR_INDEX.NIV]).toBe(3);
+    expect(vm.state.pendingLevelLoad).toBe(true);
+  });
+
+  it('$MR_PLAY: STW empacando slot y canal dispara playSound', () => {
+    const vm = createVM(`
+SONIDO 0
+ONDA SEN
+ENV 0,1,12,2
+NOTA DO5 4
+FIN
+PROGRAMA
+10 EN CUADRO IR 100
+100 STW $MR_PLAY,32
+110 RET
+`);
+    step(vm);
+    // 32 = 0x20 → slot = val & 0xf = 0, channel = (val>>4)&0xf = 2.
+    expect(vm.synth.channels[2].isPlaying).toBe(true);
+    expect(vm.synth.channels[0].isPlaying).toBe(false);
+  });
+
+  it('$MR_SILENCE: STW silencia canal', () => {
+    const vm = createVM(`
+SONIDO 0
+ONDA SEN
+ENV 0,1,12,2
+NOTA DO5 4
+FIN
+PROGRAMA
+10 EN CUADRO IR 100
+100 SON 0,1
+105 STW $MR_SILENCE,1
+110 RET
+`);
+    step(vm);
+    expect(vm.synth.channels[1].isPlaying).toBe(false);
+  });
+
+  it('$MR_REPAINT: STW marca el fondo activo como dirty', () => {
+    const vm = createVM(`
+SPRITE 0 8x8
+00000000
+00000000
+00000000
+00000000
+00000000
+00000000
+00000000
+00000000
+MAPA 0 4x4
+0000
+0000
+0000
+0000
+PROGRAMA
+10 EN INICIONIVEL IR 50
+50 FON 0:RET
+`);
+    vm.runFrame();
+    // Después de FON + el primer prerender, dirty se consume y queda false.
+    expect(vm.mapState.maps[0].dirty).toBe(false);
+    // STW $MR_REPAINT directamente desde JS via writeWord.
+    writeWord(vm.state, vm, 0x0B010, 0);
+    expect(vm.mapState.maps[0].dirty).toBe(true);
+  });
+
+  it('LDM/LDW en magic registers retornan 0 (sin backing storage)', () => {
+    const vm = createVM(`PROGRAMA
+10 EN CUADRO IR 100
+100 STW $MR_CARNIV,7
+105 A=LDW($MR_CARNIV)
+110 B=LDM($MR_CARNIV)
+115 RET
+`);
+    step(vm);
+    expect(vm.state.vars[VAR_INDEX.A]).toBe(0);
+    expect(vm.state.vars[VAR_INDEX.B]).toBe(0);
+    // Pero la acción sí disparó:
+    expect(vm.state.vars[VAR_INDEX.NIV]).toBe(7);
+  });
+
+  it('STM byte-a-byte en magic registers es no-op silente', () => {
+    const vm = createVM(`PROGRAMA
+10 EN CUADRO IR 100
+100 STM $MR_CARNIV,9
+105 STM $MR_CARNIV+1,0
+110 STM $MR_CARNIV+2,0
+115 STM $MR_CARNIV+3,0
+120 RET
+`);
+    step(vm);
+    // STM byte-a-byte NO dispara la acción.
+    expect(vm.state.vars[VAR_INDEX.NIV]).toBe(0);
+    expect(vm.state.pendingLevelLoad).toBe(false);
   });
 });
 

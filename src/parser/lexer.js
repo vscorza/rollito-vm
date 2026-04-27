@@ -85,6 +85,13 @@ export const SYMBOLIC_CONSTS = {
   SON_BYTES:  768,
   FB_W:       320,
   FB_H:       200,
+  // Magic registers (v2-E). STW a estas direcciones dispara una acción
+  // del runtime; STM byte-a-byte y lecturas son no-op / 0.
+  MR_SILENCE: 0x0B000,  // silencia canal val&0xff
+  MR_PLAY:    0x0B004,  // playSound(slot=val&0xf, ch=(val>>4)&0xf)
+  MR_NOISE:   0x0B008,  // playNoise(slot=val&0xf)
+  MR_CARNIV:  0x0B00C,  // CARNIV val
+  MR_REPAINT: 0x0B010,  // marca el fondo activo dirty (fuerza re-prerender)
 };
 
 function isDigit(c) { return c >= '0' && c <= '9'; }

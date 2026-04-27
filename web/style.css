@@ -639,3 +639,32 @@ body.docs-page {
 }
 .docs-main ul, .docs-main ol { padding-left: 1.5rem; }
 .docs-main li { margin: 0.2rem 0; }
+
+/* Memory inspector (v2-H) */
+.mem-dialog { width: min(820px, 92vw); }
+.mem-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+.mem-toolbar label { display: inline-flex; align-items: center; gap: 0.3rem; }
+.mem-toolbar input[type="text"] {
+  width: 8em;
+  font-family: monospace;
+}
+.mem-disasm-toggle { font-size: 0.9em; }
+.mem-dump {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg-2, #111);
+  border: 1px solid var(--bg-3, #222);
+  border-radius: 4px;
+  white-space: pre;
+  overflow: auto;
+  max-height: 60vh;
+}
+.mem-hint { font-size: 0.8em; opacity: 0.7; margin-top: 0.4rem; }
