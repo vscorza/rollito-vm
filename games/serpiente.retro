@@ -41,6 +41,7 @@ PROGRAMA
 
 ; --- CUADRO ----------------------------------
 100 BOR 0
+101 REC 32,20,256,160,1     ; fondo del playfield (color 1)
 102 TXT 8,4,"PUNTOS",7
 104 SI PUN=0 ENT 110
 106 PAR I=1 A PUN%10

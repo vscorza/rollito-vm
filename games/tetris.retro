@@ -87,28 +87,41 @@ SPRITE 7 8x8
 11111111
 11111111
 
-; --- Mapa 0: tablero 10x20 ---------------------
+; SPRITE 8 = fondo del playfield (gris oscuro). Hace que las celdas
+; vacías se vean distintas del HUD y FON 0 sobreescribe píxeles
+; del cuadro anterior, eliminando estelas de la pieza al caer.
+SPRITE 8 8x8
+55555555
+55555555
+55555555
+55555555
+55555555
+55555555
+55555555
+55555555
+
+; --- Mapa 0: tablero 10x20 (cell 8 = vacío, 1..7 = pieza) ---
 MAPA 0 10x20
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
-0000000000
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
+8888888888
 
 ; --- Sonidos ---------------------------------
 SONIDO 0
@@ -151,7 +164,8 @@ PROGRAMA
 96 RET
 
 ; --- INICIONIVEL: borrar tablero + spawn ------
-200 MEMSET $MAP_BASE,0,200    ; cells 0..199 de MAPA 0 = 0
+200 MEMSET $MAP_BASE,8,200    ; cells = 8 (vacío con bg)
+202 FON 0                     ; auto-blit del fondo cada cuadro
 205 STW $MR_REPAINT,0
 210 PUN=0:NIV=0:Z=0
 215 G=ALE(7)                  ; pieza siguiente
@@ -325,7 +339,7 @@ PROGRAMA
 7040 SI Y>=20 ENT H=1
 7045 SI Y<0 ENT IR 7060
 7050 SI H=1 ENT IR 7060
-7055 SI TIL(0,X,Y)<>0 ENT H=1
+7055 SI TIL(0,X,Y)<>8 ENT H=1
 7060 K=K*16
 7065 SIG
 7070 RET
@@ -357,7 +371,7 @@ PROGRAMA
 7510 R=19-I                ; fila a leer
 7515 K=0
 7520 PAR J=0 A 9
-7525 SI TIL(0,J,R)<>0 ENT K=K+1
+7525 SI TIL(0,J,R)<>8 ENT K=K+1
 7530 SIG
 7535 SI K=10 ENT IR 7560   ; fila llena: la "comemos"
 7540 SI W=R ENT IR 7555    ; ya está en su lugar
@@ -367,7 +381,7 @@ PROGRAMA
 ; Después: filas 0..W deben quedar vacías (si W>=0).
 7565 SI W<0 ENT IR 7580
 7570 PAR I=0 A W
-7575 MEMSET $MAP_BASE+I*10,0,10
+7575 MEMSET $MAP_BASE+I*10,8,10
 7578 SIG
 7580 L=W+1                 ; líneas eliminadas
 7585 RET

@@ -202,7 +202,10 @@ PROGRAMA
 625 RET
 
 ; --- game over overlay ------------------------
-800 LLA 580
+;   BOR 0 limpia las estelas de naves/balas/estrellas del último cuadro
+;   antes del freeze.
+800 BOR 0
+802 LLA 580
 810 TXT 96,80,"GAME OVER",8
 815 TXT 80,100,"PUN: ",7
 820 PAR I=1 A PUN%100
