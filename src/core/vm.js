@@ -2,7 +2,7 @@ import { PIXELS, blit } from '../render/framebuffer.js';
 import { DEFAULT_PALETTE, createPaletteBank, setPalette } from '../render/palette.js';
 import { parseProgram } from '../parser/parser.js';
 import { compile } from '../parser/compiler.js';
-import { createState, VAR_INDEX, DEFAULT_SEED } from './memory.js';
+import { createState, VAR_INDEX, DEFAULT_SEED, MEM } from './memory.js';
 import { createSpriteState, advanceActors, renderActors } from './sprites.js';
 import {
   createMapState, setMap, prerenderMap,
@@ -11,7 +11,7 @@ import {
 import { createInputState } from './input.js';
 import {
   createSynth, loadSound, tickSynthHeadless, updateSilenceFlag,
-  TOTAL_CHANNELS,
+  serializeSoundToBytes, TOTAL_CHANNELS,
 } from '../audio/synth.js';
 
 // VM headless con ciclo de vida completo (Hito 7).
@@ -42,10 +42,19 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
     mapState: createMapState(),
     inputState: createInputState(),
     synth: createSynth(audioCtx),
+    // Buffers de las regiones del memory map (docs/PLAN.md §17).
+    // CODE: backing en bytes, queda en ceros — habilita LDM/STM consistente
+    //   y deja la puerta abierta para v2 (bytecode real).
+    // SON: layout flat para LDR(SON, ...) — se escribe al cargar cada SONIDO.
+    // FREE: 320 KB de propósito general para el usuario.
+    codeMem: new Uint8Array(MEM.CODE.size),
+    sonMem: new Uint8Array(MEM.SON.size),
+    freeMem: new Uint8Array(MEM.FREE.size),
   };
-  const rgba32 = new Uint32Array(PIXELS);
   const bank = createPaletteBank();
   setPalette(bank, 0, DEFAULT_PALETTE);
+  vmRef.bank = bank;  // expuesto para readByte/writeByte (region PAL)
+  const rgba32 = new Uint32Array(PIXELS);
 
   const state = createState(seed);
   const parsed = parseProgram(source);
@@ -60,6 +69,10 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
   }
   for (const sound of parsed.sounds || []) {
     loadSound(vmRef.synth, sound.index, sound);
+    // También serializamos al layout flat para acceso por LDR/LDM.
+    const slotOff = sound.index * MEM.SON.slotStride;
+    const slotSlice = vmRef.sonMem.subarray(slotOff, slotOff + MEM.SON.slotStride);
+    serializeSoundToBytes(sound, slotSlice);
   }
   // Si el .retro declara PALETA n, sobreescribe la default. PALETA 0
   // queda activa al iniciar el juego (el bank arranca con active=0).

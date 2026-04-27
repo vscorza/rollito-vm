@@ -1,4 +1,8 @@
-import { resolveVar, READONLY_VARS, LOOP_FRAME_SIZE, VAR_INDEX, ARRAY_SIZE, nextRandom } from '../core/memory.js';
+import {
+  resolveVar, READONLY_VARS, LOOP_FRAME_SIZE, VAR_INDEX, ARRAY_SIZE, nextRandom,
+  readByte, writeByte, readWord, writeWord,
+  readByteIndexed, writeByteIndexed, memCopy, memSet,
+} from '../core/memory.js';
 import { drawText } from '../builtins/text.js';
 import { DRAW_BUILTINS } from '../builtins/draw.js';
 import {
@@ -278,6 +282,11 @@ function compileCall(ast, vmRef) {
     case 'RUI': return compileRui(ast, vmRef);
     case 'SIL': return compileSil(ast, vmRef);
     case 'CARNIV': return compileCarniv(ast, vmRef);
+    case 'STM':    return compileStm(ast, vmRef);
+    case 'STW':    return compileStw(ast, vmRef);
+    case 'STR':    return compileStr(ast, vmRef);
+    case 'MEMCPY': return compileMemCpy(ast, vmRef);
+    case 'MEMSET': return compileMemSet(ast, vmRef);
     default:
       throw new Error(`builtin desconocido: ${ast.name}`);
   }
@@ -678,6 +687,9 @@ function compileFnCall(ast, vmRef) {
     case 'COS':  return compileUnaryFn(ast, vmRef, (g) => Math.round(Math.cos(g * Math.PI / 180) * 1000) | 0);
     case 'MIN':  return compileBinaryFn(ast, vmRef, (a, b) => a < b ? a : b);
     case 'MAX':  return compileBinaryFn(ast, vmRef, (a, b) => a > b ? a : b);
+    case 'LDM':  return compileLdm(ast, vmRef);
+    case 'LDW':  return compileLdw(ast, vmRef);
+    case 'LDR':  return compileLdr(ast, vmRef);
     default:
       throw new Error(`función desconocida: ${ast.name}`);
   }
@@ -794,6 +806,92 @@ function compileTec(ast, vmRef) {
     if (k < 0 || k >= 256) return 0;
     return vmRef.inputState.keys[k] ? 1 : 0;
   };
+}
+
+// =====================================================================
+// Acceso a memoria (docs/PLAN.md §18).
+// LDM/LDW/LDR son funciones (en compileFnCall). STM/STW/STR y
+// MEMCPY/MEMSET son statements (en compileCall). Todas las direcciones
+// son absolutas — no hay registro de página estilo LUI.
+// =====================================================================
+
+function compileStm(ast, vmRef) {
+  expectArity(ast, 2);
+  const aA = compileExpr(ast.args[0], vmRef);
+  const aV = compileExpr(ast.args[1], vmRef);
+  return (pc, state) => {
+    writeByte(state, vmRef, aA(state) | 0, aV(state));
+    return pc + 1;
+  };
+}
+
+function compileStw(ast, vmRef) {
+  expectArity(ast, 2);
+  const aA = compileExpr(ast.args[0], vmRef);
+  const aV = compileExpr(ast.args[1], vmRef);
+  return (pc, state) => {
+    writeWord(state, vmRef, aA(state) | 0, aV(state) | 0);
+    return pc + 1;
+  };
+}
+
+function compileStr(ast, vmRef) {
+  if (ast.args.length !== 4) {
+    throw new Error(`STR requiere 4 args (region, slot, offset, val)`);
+  }
+  const aR = compileExpr(ast.args[0], vmRef);
+  const aS = compileExpr(ast.args[1], vmRef);
+  const aO = compileExpr(ast.args[2], vmRef);
+  const aV = compileExpr(ast.args[3], vmRef);
+  return (pc, state) => {
+    writeByteIndexed(vmRef, aR(state), aS(state), aO(state), aV(state));
+    return pc + 1;
+  };
+}
+
+function compileMemCpy(ast, vmRef) {
+  expectArity(ast, 3);
+  const aSrc = compileExpr(ast.args[0], vmRef);
+  const aDst = compileExpr(ast.args[1], vmRef);
+  const aN   = compileExpr(ast.args[2], vmRef);
+  return (pc, state) => {
+    memCopy(state, vmRef, aSrc(state) | 0, aDst(state) | 0, aN(state) | 0);
+    return pc + 1;
+  };
+}
+
+function compileMemSet(ast, vmRef) {
+  expectArity(ast, 3);
+  const aDst = compileExpr(ast.args[0], vmRef);
+  const aV   = compileExpr(ast.args[1], vmRef);
+  const aN   = compileExpr(ast.args[2], vmRef);
+  return (pc, state) => {
+    memSet(state, vmRef, aDst(state) | 0, aV(state), aN(state) | 0);
+    return pc + 1;
+  };
+}
+
+// LDM/LDW/LDR — funciones en expresión.
+function compileLdm(ast, vmRef) {
+  if (ast.args.length !== 1) throw new Error(`LDM: requiere 1 arg`);
+  const aA = compileExpr(ast.args[0], vmRef);
+  return (state) => readByte(state, vmRef, aA(state) | 0);
+}
+
+function compileLdw(ast, vmRef) {
+  if (ast.args.length !== 1) throw new Error(`LDW: requiere 1 arg`);
+  const aA = compileExpr(ast.args[0], vmRef);
+  return (state) => readWord(state, vmRef, aA(state) | 0);
+}
+
+function compileLdr(ast, vmRef) {
+  if (ast.args.length !== 3) {
+    throw new Error(`LDR: requiere 3 args (region, slot, offset)`);
+  }
+  const aR = compileExpr(ast.args[0], vmRef);
+  const aS = compileExpr(ast.args[1], vmRef);
+  const aO = compileExpr(ast.args[2], vmRef);
+  return (state) => readByteIndexed(vmRef, aR(state), aS(state), aO(state));
 }
 
 // Re-exports usados por tests.

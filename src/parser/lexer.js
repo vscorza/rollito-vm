@@ -37,6 +37,8 @@ export const BUILTINS = new Set([
   'MAP', 'FON', 'SOL', 'GRA', 'SAL', 'LIM',
   'SON', 'RUI', 'SIL',
   'CARNIV',
+  // Memory access (docs/PLAN.md §18).
+  'STM', 'STW', 'STR', 'MEMCPY', 'MEMSET',
 ]);
 
 // Funciones que devuelven un entero, llamables en una expresión.
@@ -46,6 +48,8 @@ export const FUNCTIONS = new Set([
   'COL', 'X', 'Y', 'VX', 'VY', 'VIS', 'DIS',
   'TIL', 'COLM', 'PIE', 'BTN', 'TEC',
   'ALE', 'ABS', 'SGN', 'MIN', 'MAX', 'RAI', 'SEN', 'COS',
+  // Memory loads (docs/PLAN.md §17).
+  'LDM', 'LDW', 'LDR',
 ]);
 
 // Variables especiales (read/write o read-only). El parser las trata como
@@ -68,6 +72,15 @@ export function tokenize(line) {
     if (c === ';') break;
 
     if (isDigit(c)) {
+      // Literal hex: 0x... o 0X...
+      if (c === '0' && i + 1 < n && (line[i + 1] === 'x' || line[i + 1] === 'X')) {
+        let j = i + 2;
+        while (j < n && /[0-9a-fA-F]/.test(line[j])) j++;
+        if (j === i + 2) throw new Error(`Literal hex sin dígitos en columna ${i + 1}`);
+        tokens.push({ type: 'number', value: parseInt(line.slice(i + 2, j), 16), col: i });
+        i = j;
+        continue;
+      }
       let j = i;
       while (j < n && isDigit(line[j])) j++;
       tokens.push({ type: 'number', value: parseInt(line.slice(i, j), 10), col: i });

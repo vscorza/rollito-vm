@@ -111,6 +111,26 @@ describe('Smoke tests de los 5 ejemplos canónicos', () => {
     expect(vm.spriteState.actors[12 * 16 + 3]).toBe(-6);
   });
 
+  it('camaleon.retro: recolora el sprite y agrega plataformas según NIV', () => {
+    const vm = smoke('camaleon', 30);
+    // SPRITE 1 row 4 (08899880) tiene 9 en columnas 3 y 4 → pixels[35] y [36].
+    // En NIV=0 quedan en 9 (9+0=9).
+    expect(vm.spriteState.patterns[1].pixels[35]).toBe(9);
+    // El piso (cells 220..239 en MAPA 0) está poblado con tile 2.
+    expect(vm.mapState.maps[0].cells[220]).toBe(2);
+    expect(vm.mapState.maps[0].cells[239]).toBe(2);
+    // En NIV=0 NO hay plataformas adicionales (cells 165..168 quedan en 0).
+    expect(vm.mapState.maps[0].cells[165]).toBe(0);
+    // Bumpeamos NIV manualmente para verificar el handler de INICIONIVEL.
+    vm.state.vars[30] = 1;
+    vm.state.pendingLevelLoad = true;
+    vm.runFrame();  // dispara CARGANIVEL + INICIONIVEL
+    // Ahora plataforma row 8 cols 5..8 está, color del player es 10.
+    expect(vm.mapState.maps[0].cells[165]).toBe(2);
+    expect(vm.mapState.maps[0].cells[168]).toBe(2);
+    expect(vm.spriteState.patterns[1].pixels[35]).toBe(10);
+  });
+
   it('mario-mini.retro: chocando con la bandera (slot 5) salta de NIV 0 a NIV 1', () => {
     const vm = smoke('mario-mini', 1);
     // Forzar la posición del player a la bandera (288,144) para gatillar COL(0,5).

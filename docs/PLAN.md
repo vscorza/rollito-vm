@@ -496,6 +496,14 @@ Esto es el equivalente de un mini-JIT, escrito en ~150 líneas de JS. No
 es bytecode interpretado; es JS código que el motor V8/SpiderMonkey
 puede inlinar.
 
+**Memoria virtual via address translation**: el mapa de memoria de
+512 KB (§18) no se materializa como un único `ArrayBuffer`. Cada región
+sigue viviendo en su typed array nativo (sprites, mapas, paletas,
+framebuffer); las primitivas `LDM`/`STM`/`LDR`/`STR` traducen una
+dirección lógica a la región y offset físico. Esto preserva la
+performance de las closures (no hay copia entre buffers) y al mismo
+tiempo da al usuario una vista plana y direccionable de toda la VM.
+
 ### 11.2. Cero allocations en el hot path
 
 El loop de cuadro y todos los handlers compilados **no allocan**. Esto
@@ -790,3 +798,186 @@ El proyecto está listo para compartir cuando:
   decide al llegar al Hito 9.
 - **Mobile**: el target principal es desktop. Mobile es nice-to-have
   pero no parte del DoD.
+
+---
+
+## 18. Mapa de memoria y encoding de instrucciones
+
+Esta sección documenta el "hardware ficticio" de RollitoVM: el espacio
+direccionable de 512 KB y el formato de palabra de 32 bits. La VM real
+sigue ejecutando closures de JS (§11.1); este modelo está expuesto al
+programador a través de las primitivas `LDM`/`STM`, `LDW`/`STW`,
+`LDR`/`STR`, `MEMCPY`, `MEMSET`. Todas las direcciones son **absolutas**
+(0..0x7FFFF) — no hay registro de página estilo `LUI`/`HI`.
+
+### 18.1. Tamaño de palabra y encoding de instrucciones
+
+La memoria lógica se direcciona por **byte** (necesario para `LUI` +
+offset). La **palabra natural** es de **32 bits**: coincide con el
+`Int32Array` de variables, con el ancho del PRNG xorshift32 y con un
+encoding RISC clásico. Cada instrucción ocupa 1 word fijo (4 bytes).
+
+```
+ 31                                          8 7         0
++--------------------------------------------+-----------+
+|                  args (24 bits)            |  opcode   |
++--------------------------------------------+-----------+
+```
+
+Los 24 bits superiores se interpretan según el opcode:
+
+| Tipo | Layout                                      | Uso                       |
+|------|---------------------------------------------|---------------------------|
+| R    | `rd(5) | rs(5) | rt(5) | func(9)`           | Reg-a-reg (`ADD`, `MUL`)  |
+| I    | `rd(5) | rs(5) | imm(14)`                   | Inmediato (`ADDI`)        |
+| M    | `rd(5) | imm(16) | _(3)`                    | Memoria absoluta (`LDM`)  |
+| X    | `rd(5) | reg(3) | slot(5) | off(8) | _(3)`  | Memoria indexada (`LDR`)  |
+
+Un opcode = 8 bits → hasta 256 instrucciones. Hoy estamos en ~30, queda
+margen amplio.
+
+> **La encoding es ESPECIFICACIÓN, no implementación.** En v1 la VM
+> ejecuta closures (§11.1); el formato binario queda documentado para que
+> un usuario que imprima un programa entienda el "hardware" y para
+> habilitar v2-A (intérprete bytecode real) sin romper compatibilidad.
+
+### 18.2. Mapa de memoria (512 KB = `0x80000` bytes)
+
+| Offset    | Tamaño | Región    | Contenido                                   |
+|-----------|-------:|-----------|---------------------------------------------|
+| `0x00000` | 32 KB  | **CODE**  | Programa compilado (8K instrucciones, reservado para v2-A) |
+| `0x08000` | 32 KB  | **STATE** | Vars + arrays + loop/call + actores + input |
+| `0x10000` | 32 KB  | **SPR**   | 32 patrones × 1 KB stride (256 B útiles)    |
+| `0x18000` | 16 KB  | **MAP**   | 4 mapas × 4 KB stride (max 64×64 cells)     |
+| `0x1C000` | 4 KB   | **PAL**   | 4 paletas × 1 KB stride (64 B útiles = 16 colores RGBA) |
+| `0x1D000` | 12 KB  | **SON**   | 16 sonidos × 768 B stride (def serializada) |
+| `0x20000` | 64 KB  | **FB**    | Framebuffer indexado (320×200 = 64 000 B)   |
+| `0x30000` | 320 KB | **FREE**  | Memoria de propósito general                |
+| `0x80000` |        | **END**   | (512 KB)                                     |
+
+Notas por región:
+
+- **CODE** no es byte-accesible en v1: lecturas devuelven 0, escrituras
+  son no-op silentes. `vmRef.codeMem` queda allocado en ceros para que
+  v2-A pueda activar bytecode real sin cambiar la API del `vmRef`.
+- **STATE** mapea vars (`Int32Array`), arrays M0..M7, stacks de loop/call,
+  actores y `inputState.buttons/keys` a un layout flat. Se accede en
+  little-endian. La escritura está permitida pero no chequea
+  invariants — usarla sólo para introspección y patches deliberados.
+- **SPR** / **MAP** / **PAL** son full read/write con efectos colaterales:
+  - `STR(MAP, slot, off, val)` setea `m.dirty = true` (invalida
+    pre-render del fondo).
+  - `STR(PAL, slot, off, val)` actualiza `bank.luts[slot*16 + colorIdx]`
+    byte a byte (cada color es RGBA little-endian).
+  - `STR(SPR, ...)` muta `pattern.pixels` directamente — el render lo
+    lee fresh cada cuadro.
+- **SON**: `LDR` retorna bytes según el layout serializado (§18.4).
+  `STR(SON, ...)` es **no-op** en v1 (la def. textual no se re-parsea
+  en runtime). Movido a v2-C.
+- **FB** byte-accesible: equivalente a `PIN` sin clipping.
+- **FREE**: `Uint8Array(320*1024)` en `vmRef.freeMem`. Útil para
+  scratch space, snapshots, level-loading, save states.
+
+### 18.3. Constantes simbólicas (reservadas, v2-G)
+
+Para que el código sea legible sin que el usuario tenga que recordar
+offsets:
+
+| Símbolo        | Valor      | Significado            |
+|----------------|------------|------------------------|
+| `$RPAL`        | `0`        | Region ID: PAL         |
+| `$RSPR`        | `1`        | Region ID: SPR         |
+| `$RMAP`        | `2`        | Region ID: MAP         |
+| `$RSON`        | `3`        | Region ID: SON         |
+| `$CODE_BASE`   | `0x00000`  | Inicio de CODE         |
+| `$STATE_BASE`  | `0x08000`  | Inicio de STATE        |
+| `$SPR_BASE`    | `0x10000`  | Inicio de SPR          |
+| `$MAP_BASE`    | `0x18000`  | Inicio de MAP          |
+| `$PAL_BASE`    | `0x1C000`  | Inicio de PAL          |
+| `$SON_BASE`    | `0x1D000`  | Inicio de SON          |
+| `$FB_BASE`     | `0x20000`  | Inicio de framebuffer  |
+| `$FREE_BASE`   | `0x30000`  | Inicio de FREE         |
+| `$SPR_STRIDE`  | `0x400`    | Bytes por slot SPR     |
+| `$MAP_STRIDE`  | `0x1000`   | Bytes por slot MAP     |
+| `$PAL_STRIDE`  | `0x400`    | Bytes por slot PAL     |
+| `$SON_STRIDE`  | `0x300`    | Bytes por slot SON     |
+
+En v1 estos nombres están **documentados pero no resueltos** por el
+lexer. Usarlos en comentarios es válido; usarlos como literales no.
+v2-G activa la resolución `$NAME → valor` lex-time.
+
+### 18.4. Layout de SON (sonidos serializados)
+
+Cada slot ocupa 768 bytes. Layout flat:
+
+| Offset | Bytes | Contenido                                                |
+|--------|-------|----------------------------------------------------------|
+| 0      | 1     | wave (0=TRI, 1=SIE, 2=PUL, 3=SEN)                        |
+| 1      | 1     | pulseWidth (0..15)                                       |
+| 2..5   | 4     | ADSR (a, d, s, r — 1 byte cada uno)                      |
+| 6..7   | 2     | step count (uint16 little-endian)                        |
+| 8+     | 4·N   | cada step: (tipo, nota empacada, ticks, padding)         |
+
+Donde **nota empacada** = `semitone (bits 0..3) | octave (bits 4..6)`.
+Hasta 190 steps por sonido (8 + 190·4 = 768). En v1 se serializa al
+cargar; modificar bytes con `STR(SON, ...)` no afecta la reproducción
+(v2-C agrega re-parseo en `SON n,c`).
+
+### 18.5. Magic registers reservados (v2-E)
+
+Direcciones dentro de STATE reservadas para "memory-mapped IO". En v1
+son zonas normales de bytes — no disparan efectos. v2-E las activa:
+
+| Offset (desde `STATE_BASE`) | Efecto al escribir (v2-E)         |
+|-----------------------------|-----------------------------------|
+| `0x600`                     | Silencia el canal `val`           |
+| `0x604`                     | `playSound(slot=val&0xf, ch=val>>4)` |
+| `0x700`                     | `CARNIV val` (cambio de nivel)    |
+| `0x800`                     | Re-blittea el fondo activo        |
+
+### 18.6. Side effects al escribir
+
+| Región | `STR`/`STM`     | Efecto                                              |
+|--------|-----------------|-----------------------------------------------------|
+| PAL    | byte → LUT      | `bank.luts[slot*16 + idx]` se actualiza byte a byte |
+| MAP    | byte → cell     | cell mutado + `m.dirty = true`                      |
+| SPR    | byte → pixel    | `pattern.pixels[off] = val & 0xf`                   |
+| SON    | (no-op)         | reservado para v2-C                                  |
+| FB     | byte → pixel    | `vmRef.fb[off] = val`                                |
+| FREE   | byte → freeMem  | `vmRef.freeMem[off] = val`                           |
+| STATE  | byte → state    | escritura directa, sin chequeo de invariants        |
+| CODE   | (no-op)         | reservado para v2-A                                  |
+
+### 18.7. Roadmap v2 (deferred)
+
+Lo siguiente queda **diseñado pero no implementado** en v1. Las
+estructuras de v1 (codeMem, sonMem, magic register offsets, layout
+serializado) están dimensionadas para que activarlo sea cambiar pocos
+archivos sin romper la API:
+
+- **v2-A — Bytecode real**: el compilador emite words a `vmRef.codeMem`;
+  `runBytecode(pc)` hace `fetch → decode → execute`. La encoding ya
+  está fijada (§18.1). Habilita escribir un disassembler del .retro.
+- **v2-B — Self-modifying code**: con bytecode real, `STM` en CODE
+  re-define instrucciones en runtime. El intérprete debe re-decodear
+  cada fetch (no cachear).
+- **v2-C — Modificación de sonidos byte a byte**: `STR(SON, ...)` deja
+  de ser no-op; `SON n,c` re-parsea desde la región antes de disparar.
+  El layout flat ya está definido (§18.4) y `loadSound` ya lo escribe
+  en v1.
+- **v2-D — `LDW`/`STW` (32-bit word access)**: ✅ **incluido en v1**.
+- **v2-I — Registro `LUI` (paginación de direcciones)**: si los `.retro`
+  empiezan a hacer mucho `LDM(0x30000+i)` con offsets variables, podría
+  agregarse un registro `adrHi` de 16 bits y un mnemónico `LUI hi` que
+  lo setea. `LDM(addr)` haría `(adrHi << 16) | addr`. Se evaluó y se
+  descartó en v1: el lenguaje ya soporta enteros de 32 bits, así que
+  `LDM(0x30000+i)` funciona sin overhead. La implementación quedaría
+  pequeña si la demanda surge.
+- **v2-E — Memory-mapped IO**: registros mágicos en STATE (§18.5)
+  disparan efectos al escribir. Offsets ya reservados.
+- **v2-F — `MEMCPY` / `MEMSET`**: ✅ **incluido en v1**.
+- **v2-G — Constantes simbólicas (`$RPAL`, etc.)**: el lexer resuelve
+  nombres a literales. Tabla en §18.3.
+- **v2-H — Memory inspector en la IDE**: panel en `web/editor/` que
+  dumpea bytes de cualquier rango durante el debug. Se construye sobre
+  `readByte` ya expuesto en v1.

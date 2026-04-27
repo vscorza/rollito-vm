@@ -513,6 +513,137 @@ con `;` no cuentan para el límite de 32 caracteres.
 
 ---
 
+## 15. Acceso a memoria
+
+RollitoVM expone su estado interno como un espacio plano de **512 KB**.
+Las primitivas de esta sección permiten leer y escribir bytes en
+cualquier región (sprites, mapas, paletas, framebuffer, scratch space).
+Detalles del mapa completo en `PLAN.md` §18.
+
+### 15.1. Mapa de regiones
+
+| Offset    | Región    | Contenido                                          |
+|-----------|-----------|----------------------------------------------------|
+| `0x00000` | **CODE**  | Programa compilado (read-only en v1)               |
+| `0x08000` | **STATE** | Vars, arrays M0..M7, actores, input                |
+| `0x10000` | **SPR**   | 32 patrones × 1 KB stride                          |
+| `0x18000` | **MAP**   | 4 mapas × 4 KB stride                              |
+| `0x1C000` | **PAL**   | 4 paletas × 1 KB stride                            |
+| `0x1D000` | **SON**   | 16 sonidos × 768 B stride (read-only en v1)        |
+| `0x20000` | **FB**    | Framebuffer indexado (320×200)                     |
+| `0x30000` | **FREE**  | 320 KB de scratch para tu juego                    |
+
+Region IDs (para `LDR`/`STR`): `0=PAL, 1=SPR, 2=MAP, 3=SON`.
+
+### 15.2. Acceso por dirección absoluta — `LDM`/`STM`
+
+Las direcciones son enteros de 0 a `0x7FFFF` (19 bits = 512 KB).
+Cualquier expresión entera vale; el dispatcher la enmascara y la
+mapea a la región correspondiente.
+
+#### `LDM(addr)` → byte
+Lee 1 byte. Devuelve `0` para regiones no respaldadas (CODE).
+```
+20 A=LDM(0x10001)                 ; SPR[0][1] (17)
+30 B=LDM(0x30000+I)               ; FREE[I]   (17)
+```
+
+#### `STM addr,val`
+Escribe 1 byte. `val` se enmascara a 8 bits.
+```
+40 STM 0x20000,9                  ; FB[0]=9 (15)
+```
+
+### 15.3. Acceso por palabra — `LDW`/`STW` (32 bits)
+
+Equivalentes a `LDM`/`STM` pero leen/escriben 4 bytes en
+**little-endian**. Útil para sacar Int32 del estado o componer valores
+sin shifts manuales.
+
+```
+20 STW 0x30000,0xCAFEBABE         ; 4 bytes en FREE (24)
+30 A=LDW(0x30000)                 ; A = 0xCAFEBABE (19)
+```
+
+### 15.4. Acceso indexado — `LDR`/`STR`
+
+Más cómodo que `LUI`+offset para leer un asset por (region, slot,
+offset). No usa `adrHi`.
+
+#### `LDR(region,slot,off)` → byte
+```
+10 A=LDR(1,2,0)                   ; SPR slot 2 byte 0 (17)
+```
+
+#### `STR region,slot,off,val`
+Side effects por región:
+- `STR 1,n,...` muta `pattern.pixels` del sprite n (recolor inmediato).
+- `STR 2,n,...` muta una celda del mapa n y marca `dirty=true` para
+  que `FON n` redibuje en el próximo cuadro.
+- `STR 0,n,...` actualiza la LUT (offset 0..63 = 16 colores RGBA).
+- `STR 3,...` es **no-op** en v1 (los sonidos no se modifican byte a
+  byte todavía).
+
+```
+20 STR 1,1,9,4                    ; sprite 1 px 9 = color 4 (17)
+30 STR 2,0,165,2                  ; mapa 0 cell 165 = tile 2 (19)
+```
+
+### 15.5. Operaciones bulk — `MEMCPY`/`MEMSET`
+
+Trabajan con direcciones absolutas. **No** combinan con `adrHi`.
+
+#### `MEMSET dst,val,n`
+Llena `n` bytes a partir de `dst` con `val`.
+```
+10 MEMSET 0x18000,0,240           ; clear MAPA 0 (24)
+```
+
+#### `MEMCPY src,dst,n`
+Copia `n` bytes de `src` a `dst`. Maneja solapamiento dst > src.
+```
+20 MEMCPY 0x20000,0x30000,64000   ; FB → FREE (snapshot, 28)
+```
+
+### 15.6. Constantes simbólicas (reservadas, v2)
+
+Para mejorar la legibilidad sin que tengas que recordar offsets:
+`$RPAL=0`, `$RSPR=1`, `$RMAP=2`, `$RSON=3`, `$SPR_BASE=0x10000`,
+`$MAP_BASE=0x18000`, `$PAL_BASE=0x1C000`, `$SON_BASE=0x1D000`,
+`$FB_BASE=0x20000`, `$FREE_BASE=0x30000`. **En v1 estos nombres no
+están implementados** — usalos en comentarios. v2-G activa la
+resolución `$NAME → valor` lex-time.
+
+### 15.7. Casos borde
+
+- Region/slot/offset fuera de rango → no-op silente (lecturas devuelven
+  `0`).
+- Direcciones negativas o ≥ `0x80000` → no-op silente.
+- Escribir a CODE o a SON: no-op silente.
+- Las paletas ocupan 64 bytes útiles (16 colores × 4 bytes RGBA),
+  aunque el stride sea 1024 — escribir más allá del byte 63 dentro de
+  un slot no afecta colores.
+
+### 15.8. Ejemplos completos
+
+**Recolorar un sprite por nivel** (de `games/camaleon.retro`):
+```
+700 PAR I=0 A 63
+705 SI LDR(1,1,I)<>9 ENT 715
+710 STR 1,1,I,9+NIV
+715 SIG
+720 RET
+```
+
+**Construir un piso completo en el mapa**:
+```
+750 MEMSET 0x18000,0,240
+755 PAR I=0 A 19:STR 2,0,220+I,2:SIG
+760 RET
+```
+
+---
+
 ## Apéndice: notas musicales reconocidas
 
 Las notas se escriben en notación hispana: `DO RE MI FA SOL LA SI`,

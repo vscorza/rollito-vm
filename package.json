@@ -6,7 +6,7 @@
   "description": "Una máquina virtual estilo revista de juegos de los 80 para el navegador.",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "test": "vitest run --project default",

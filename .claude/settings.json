@@ -22,7 +22,8 @@
       "Bash(awk '/^PROGRAMA$/{p=1;next} p && /^[[:space:]]*[0-9]+ /{ split\\($0, a, \" \"\\); print a[1] }' games/espacial.retro)",
       "Bash(git config *)",
       "Bash(echo \"Configurado: $\\(git config user.name\\) <$\\(git config user.email\\)>\")",
-      "Bash(gh repo *)"
+      "Bash(gh repo *)",
+      "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/camaleon.retro)"
     ]
   }
 }

@@ -1,0 +1,177 @@
+; ===============================================
+; camaleon.retro — sprite y mapa modificados por nivel.
+;   Cubre: STR(SPR,...) recolora pixeles del player, STR(MAP,...)
+;          construye plataformas dinámicamente, FREE como scratch
+;          para hacer "snapshot" del FB con MEMCPY.
+;   Controles: ← → mover, Z saltar, SEL avanzar de nivel.
+; ===============================================
+
+JUEGO Camaleon
+AUTOR Demo
+VERSION 1
+
+; --- Sprites (reusables) ---------------------
+
+SPRITE 1 8x8
+00888800
+08888880
+08877880
+08888880
+08899880
+08888880
+08888880
+00888800
+
+SPRITE 2 16x16
+6666666666666666
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6555555555555556
+6666666666666666
+
+SPRITE 3 8x8
+00AAAA00
+0AAAAAA0
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+0AAAAAA0
+00AAAA00
+
+; --- Mapa base: piso completo, sin plataformas ---
+MAPA 0 20x12
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+00000000000000000000
+22222222222222222222
+
+; --- Sonidos ---------------------------------
+SONIDO 0
+ONDA PUL
+PUL 8
+ENV 0,2,8,2
+NOTA DO5 3
+NOTA SOL5 3
+NOTA DO6 3
+FIN
+
+SONIDO 1
+ONDA SEN
+ENV 0,1,12,2
+NOTA SOL5 2
+NOTA DO6 4
+FIN
+
+PROGRAMA
+10 EN INICIOJUEGO IR 90
+20 EN INICIONIVEL IR 200
+30 EN CUADRO IR 105
+
+; --- INICIOJUEGO -----------------------------
+90 PAT 0,1
+92 LIM 0,0,0,312,200
+94 VID=3
+96 RET
+
+; --- INICIONIVEL: recolor sprite + mutar mapa
+200 LLA 700                ; recolor SPRITE 1 (color 9 → 9+NIV)
+210 LLA 750                ; rebuild MAPA 0 piso + plataformas según NIV
+220 FON 0:SOL 0,2
+230 GRA 0,0,1
+240 MOV 0,16,40
+250 PAT 4,3:MOV 4,160,80   ; coin (slot 4 usa sprite 3)
+260 RET
+
+; --- recolor del player: scan del sprite 1, swap color 9 por 9+NIV ---
+;   slot 1 ocupa 64 bytes (8x8). Iteramos byte a byte con LDR/STR.
+;   STR(REGION_SPR=1, slot=1, offset, val).
+700 PAR I=0 A 63
+705 SI LDR(1,1,I)<>9 ENT 715
+710 STR 1,1,I,9+NIV
+715 SIG
+720 RET
+
+; --- mutar el mapa: piso siempre, plataformas adicionales por nivel ---
+;   Cells (row,col) → offset = row*20 + col.
+;   NIV=0: solo piso (cells 220..239).
+;   NIV=1: piso + plataforma row 8, cols 5..8.
+;   NIV=2: anteriores + plataforma row 5, cols 12..15.
+;   Vamos a limpiar primero todo (240 cells) y dibujar lo de este nivel.
+750 MEMSET 0x18000,0,240   ; mapa 0 base = 0x18000, 240 cells
+755 PAR I=0 A 19
+758 STR 2,0,220+I,2        ; piso fila 11
+760 SIG
+762 SI NIV<1 ENT 790
+765 PAR I=0 A 3
+768 STR 2,0,165+I,2        ; row 8 col 5..8
+770 SIG
+775 SI NIV<2 ENT 790
+778 PAR I=0 A 3
+780 STR 2,0,112+I,2        ; row 5 col 12..15
+785 SIG
+790 RET
+
+; --- CUADRO -----------------------------------
+;   FON 0 ya pinta el fondo cada cuadro: NO usar BOR aquí.
+105 D=BTN(1)-BTN(0)
+110 VEL 0,D*2,VY(0)
+115 SI BTN(4) ENT LLA 300
+120 LLA 350
+125 LLA 500               ; debounce SEL en 500
+130 LLA 550               ; HUD: NIV indicator
+135 RET
+
+; --- jump -------------------------------------
+300 SI PIE(0)=0 ENT 320
+305 SAL 0,18:SON 0,0
+320 RET
+
+; --- coin pickup ------------------------------
+350 SI VIS(4)=0 ENT 370
+355 SI COL(0,4) ENT LLA 360
+370 RET
+360 OCU 4,1:PUN+=1:SON 1,1
+365 RET
+
+; --- avanzar nivel (debounce M0(0)) -----------
+;   M0(0) queda en 1 mientras BTN(7) esté presionado, vuelve a 0 al
+;   soltar. Eso evita re-disparar CARNIV cada cuadro.
+500 SI BTN(7) ENT 515
+505 M0(0)=0
+510 RET
+515 SI M0(0)=1 ENT 530
+520 M0(0)=1
+525 CARNIV (NIV+1)%3
+527 RET
+530 RET
+
+; --- HUD: muestra "NIV" + bloque del color actual del player --
+;   Demuestra LDR leyendo el byte que el INICIONIVEL acaba de escribir.
+550 TXT 8,4,"NIV",7
+555 SI NIV=0 ENT TXT 40,4,"1"
+558 SI NIV=1 ENT TXT 40,4,"2"
+562 SI NIV=2 ENT TXT 40,4,"3"
+566 C=LDR(1,1,9)           ; lee el color actual del cuerpo del sprite
+570 REC 60,4,8,8,C
+574 TXT 80,4,"COLOR",7
+580 RET

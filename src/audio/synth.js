@@ -94,7 +94,55 @@ export function loadSound(synth, slot, def) {
     env: def.env || { a: 0, d: 0, s: 15, r: 0 },
     steps,
     totalTicks,
+    rawSteps: def.steps,  // guardado para serializeSoundToBytes (LDR(SON,...))
   };
+}
+
+// =====================================================================
+// Serializa una def de sonido al layout flat de la región SON.
+// docs/PLAN.md §17.4 (v2-C diseño).
+//
+//   byte 0:    wave (0=TRI,1=SIE,2=PUL,3=SEN)
+//   byte 1:    pulseWidth (0..15)
+//   bytes 2-5: ADSR (a, d, s, r)
+//   bytes 6-7: count de steps (uint16 little-endian)
+//   bytes 8+:  cada step son 4 bytes:
+//                byte 0: tipo (0=note, 1=silence)
+//                byte 1: nota empacada (semitone bits 0..3, octave bits 4..6)
+//                byte 2: ticks (1..255)
+//                byte 3: padding (0)
+//
+// Total max: 8 + 190*4 = 768 bytes (= MEM.SON.slotMax).
+// `dst` es un Uint8Array donde escribimos a partir del offset 0.
+// =====================================================================
+const WAVE_BYTE = { TRI: 0, SIE: 1, PUL: 2, SEN: 3 };
+
+export function serializeSoundToBytes(def, dst) {
+  // Limpiar primero (slot stride es 768; dst se asume un sub-slice del tamaño correcto).
+  dst.fill(0);
+  dst[0] = WAVE_BYTE[def.wave] ?? 2;  // PUL default
+  dst[1] = (def.pulseWidth | 0) & 0x0f;
+  dst[2] = (def.env?.a | 0) & 0x0f;
+  dst[3] = (def.env?.d | 0) & 0x0f;
+  dst[4] = (def.env?.s | 0) & 0x0f;
+  dst[5] = (def.env?.r | 0) & 0x0f;
+  const steps = def.steps || [];
+  const count = Math.min(steps.length, 190);
+  dst[6] = count & 0xff;
+  dst[7] = (count >>> 8) & 0xff;
+  for (let i = 0; i < count; i++) {
+    const s = steps[i];
+    const off = 8 + i * 4;
+    if (s.type === 'silence') {
+      dst[off + 0] = 1;
+      dst[off + 1] = 0;
+      dst[off + 2] = (s.ticks | 0) & 0xff;
+    } else {
+      dst[off + 0] = 0;
+      dst[off + 1] = ((s.semitone & 0x0f) | ((s.octave & 0x07) << 4)) & 0xff;
+      dst[off + 2] = (s.ticks | 0) & 0xff;
+    }
+  }
 }
 
 export function playSound(synth, slot, channelIdx) {

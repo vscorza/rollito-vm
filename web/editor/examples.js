@@ -25,7 +25,7 @@ export const EXAMPLES = Object.fromEntries(
 );
 
 // Orden sugerido para el dropdown — del más simple al más complejo.
-export const EXAMPLE_ORDER = ['pelota', 'pong', 'saltarin', 'memoria', 'serpiente', 'mario-mini', 'espacial'];
+export const EXAMPLE_ORDER = ['pelota', 'pong', 'saltarin', 'memoria', 'serpiente', 'mario-mini', 'espacial', 'camaleon'];
 
 export function listExamples() {
   const known = EXAMPLE_ORDER.filter((n) => EXAMPLES[n]);
