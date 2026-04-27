@@ -115,6 +115,12 @@ Retorno de subrutina o de handler de evento.
 60 RET                            ;  6
 ```
 
+> **Convención**: cada handler (`CUADRO`, `INICIONIVEL`, etc.) y cada
+> subrutina llamada con `LLA` **debe terminar con `RET` explícito**.
+> El intérprete v2-A tolera fall-through al siguiente bloque por
+> compatibilidad histórica, pero la transpilación a RVM-32 requiere
+> RET explícito y los reference games del repo siguen esa convención.
+
 ### `FIN`
 Termina el programa. El VM queda en estado de "game over".
 
