@@ -993,7 +993,7 @@ archivos sin romper la API:
 ## 19. Hardware target & RVM-32 ISA
 
 RollitoVM v2-A es bytecode interpretado en JS. Para llevarlo a silicio
-diseñamos **RVM-32**, una ISA RISC mínima (~26 opcodes, 32-bit fijo,
+diseñamos **RVM-32**, una ISA RISC mínima (33 opcodes, 32-bit fijo,
 16 registros) con coprocesadores fijos para gráficos y audio
 accedidos vía MMIO. El objetivo es FPGA económica (Lattice ECP5 25F,
 ~$15-20) + algunos chips off-the-shelf (DAC audio I2S, MCU input).
@@ -1002,18 +1002,28 @@ accedidos vía MMIO. El objetivo es FPGA económica (Lattice ECP5 25F,
 opcodes, ABI, MMIO, BRAM budget para ECP5, BOM estimado, y cobertura
 del transpilador v2-A → RVM-32.
 
+**Decisiones de arquitectura**: [V2-ARCH-DECISIONS.md](V2-ARCH-DECISIONS.md)
+fija las 10 decisiones que estabilizan la ISA antes del RTL (HW divider,
+callee-saves-link, trig LUT en ROM, $RNG register, peepholes de
+queries/BTN/TEC/ALE, math inline). Implementadas en este sprint;
+density -12% promedio sobre los 9 juegos del repo.
+
 **Estado actual** (toolchain JS — completo):
-- ✅ ISA tabla + encode/decode → [src/asm/rvm32-isa.js](src/asm/rvm32-isa.js)
-- ✅ Intérprete RVM-32 en JS → [src/asm/interpreter.js](src/asm/interpreter.js)
+- ✅ ISA tabla + encode/decode → [src/asm/rvm32-isa.js](src/asm/rvm32-isa.js).
+  Incluye `DIV`/`REM`/`DIVU`/`REMU` (0x29..0x2C) y `LH`/`LHU`/`SH`
+  (0x15..0x17) además de los 26 base.
+- ✅ Intérprete RVM-32 en JS → [src/asm/interpreter.js](src/asm/interpreter.js).
+  Incluye intercept de `$RNG` (0xB300/0xB304) y trig LUT en 0x0A700.
 - ✅ MMIO command bus → [src/asm/mmio.js](src/asm/mmio.js): registros
   ARG0..ARG7 + CMD + RESULT en STATE+0x3100. Dispatcher rutea cada
   comando a los helpers JS existentes (drawPattern, blitMap, playSound,
-  aabbCollide, readByteIndexed, etc.). DIV/MOD también via MMIO.
+  aabbCollide, readByteIndexed, etc.). `Q_DIV`/`Q_MOD` deprecated:
+  el transpiler usa los opcodes nativos.
 - ✅ Transpilador v2-A → RVM-32 completo →
   [src/asm/v2a-to-rvm32.js](src/asm/v2a-to-rvm32.js): cubre todos los
-  87 opcodes del bytecode v2-A (aritmética, control flow CALL/RET,
-  PAR/SIG, memoria absoluta, builtins via MMIO, queries via MMIO,
-  LDR/STR/MEMCPY/MEMSET via MMIO).
+  87 opcodes del bytecode v2-A. Incluye peephole infra (defer-LDI),
+  CFG analysis para CALL/RET callee-saves, math inline (ABS/SGN/MIN/MAX),
+  trig LUT, $RNG, queries actor con `LH` directo a STATE.
 - ✅ Extensiones gráficas v2-A: `SPRR n,x,y,ang,esc` (rot+scale,
   nearest neighbor) y `SPRA n,x,y,a` (alpha blending via tabla).
 - ✅ Cosim de los 9 juegos del repo: vars match 100%, fb match
@@ -1036,7 +1046,9 @@ del transpilador v2-A → RVM-32.
 - [tests/integration/rvm32-games.test.js](tests/integration/rvm32-games.test.js)
   — 9 tests cosim de juegos completos (pelota..tetris+espacial).
 
-Total: **+62 tests** sobre los existentes (313 totales).
+Total: **321 tests** (313 base + RVM-32). Los 9 cosim de juegos siguen
+verdes byte-a-byte tras el sprint de refactors; ver
+[V2-ARCH-DECISIONS.md §12](V2-ARCH-DECISIONS.md) para la tabla de density.
 
 **Próximo**: implementación RTL siguiendo el roadmap de
 [docs/RTL-PLAN.md](RTL-PLAN.md) §5 (CPU core → bus + MMIO → GPU →

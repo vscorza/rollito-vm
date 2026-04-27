@@ -58,6 +58,17 @@ export function createVM(source, { audioCtx = null, seed = DEFAULT_SEED } = {}) 
     // Default: promedio (src+dst)/2; reemplazable cargando bytes en
     // freeMem y copiando con MEMCPY (futuro: MMIO 0x0B400).
     blendTable: makeDefaultBlendTable(),
+    // Trig LUT 256 × Int16 (= 512 B). Indice = (deg/360 × 256) & 0xff.
+    // Valor = sin(angle) × 1000, rango [-1000, 1000] (cabe en Int16).
+    // Direccionable en RVM-32 desde TRIG_LUT_BASE (= 0x0A700) via LH.
+    // El transpiler emite SEN/COS como LH a esta tabla (post-refactor).
+    trigLut: (() => {
+      const t = new Int16Array(256);
+      for (let i = 0; i < 256; i++) {
+        t[i] = Math.round(Math.sin((i / 256) * 2 * Math.PI) * 1000);
+      }
+      return t;
+    })(),
   };
   // Permite que el synth sepa qué buffer de bytes re-deserializar
   // cuando STR(SON,...) marca un slot como dirty (v2-C).

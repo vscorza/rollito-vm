@@ -77,6 +77,9 @@ J-type (jump con inmediato 20-bit signed PC-relative):
 | `LW rd,rs1,imm`  | I    | 0x12 | rd ← mem32[rs1+imm]                       |
 | `SB rd,rs1,imm`  | I    | 0x13 | mem8[rs1+imm] ← rd[7:0]                   |
 | `SW rd,rs1,imm`  | I    | 0x14 | mem32[rs1+imm] ← rd                       |
+| `LH rd,rs1,imm`  | I    | 0x15 | rd ← sext(mem16[rs1+imm])                 |
+| `LHU rd,rs1,imm` | I    | 0x16 | rd ← zext(mem16[rs1+imm])                 |
+| `SH rd,rs1,imm`  | I    | 0x17 | mem16[rs1+imm] ← rd[15:0]                 |
 | `ADD rd,rs1,rs2` | R    | 0x20 | rd ← rs1+rs2                              |
 | `SUB rd,rs1,rs2` | R    | 0x21 | rd ← rs1-rs2                              |
 | `AND rd,rs1,rs2` | R    | 0x22 | rd ← rs1&rs2                              |
@@ -86,6 +89,10 @@ J-type (jump con inmediato 20-bit signed PC-relative):
 | `SHR rd,rs1,rs2` | R    | 0x26 | rd ← rs1 >>> (rs2 & 31)  (logical)        |
 | `SAR rd,rs1,rs2` | R    | 0x27 | rd ← rs1 >> (rs2 & 31)   (arithmetic)     |
 | `MUL rd,rs1,rs2` | R    | 0x28 | rd ← (rs1 * rs2) low 32 bits              |
+| `DIV rd,rs1,rs2` | R    | 0x29 | rd ← (rs1/rs2)\|0 signed; div0 → 0        |
+| `REM rd,rs1,rs2` | R    | 0x2A | rd ← rs1%rs2 signed; rs2==0 → 0           |
+| `DIVU rd,rs1,rs2`| R    | 0x2B | rd ← unsigned div; div0 → 0               |
+| `REMU rd,rs1,rs2`| R    | 0x2C | rd ← unsigned rem; rs2==0 → 0             |
 | `ADDI rd,rs1,imm`| I    | 0x30 | rd ← rs1 + imm16                          |
 | `ANDI rd,rs1,imm`| I    | 0x31 | rd ← rs1 & imm16                          |
 | `ORI rd,rs1,imm` | I    | 0x32 | rd ← rs1 \| imm16                         |
@@ -99,13 +106,13 @@ J-type (jump con inmediato 20-bit signed PC-relative):
 | `JAL rd,off`     | J    | 0x51 | rd ← pc+4; pc += off*4                    |
 | `JR rs1`         | R    | 0x52 | pc ← rs1                                  |
 
-**26 opcodes**. 230 codepoints disponibles para extensión (DIV, FPU,
-atomicas, etc.).
+**33 opcodes**. 220+ codepoints disponibles para extensión (FPU,
+atómicas, vector, etc.).
 
 > **Operaciones no nativas**:
-> - `DIV`/`MOD` → rutina software en libc (ROM).
 > - Branches unsigned (`BLTU`/`BGEU`) → BLT/BGE con XOR del bit signo.
-> - `MULH` (high 32 bits de mul 64) → no implementado en v1.
+> - `MULH` (high 32 bits de mul 64) → no implementado.
+> - `RAI` (sqrt entera) → vía MMIO query helper en libc.
 
 ## 5. ABI / Convenciones
 
@@ -120,10 +127,18 @@ atomicas, etc.).
 | R14      | Stack pointer (call/locals)            |
 | R15      | Link register (lo escribe `JAL`)       |
 
-**Calling convention** (no usado por el transpiler v1, reservado):
-- args en R1..R6 (6 args). Resto via stack.
-- return value en R1.
-- caller-saved: R1..R7. callee-saved: R8..R13.
+**Calling convention v2-A → RVM-32** (callee-saves-link):
+- Args y return value via eval stack en R7 (R7 = SP del eval stack).
+- `CALL target` emite `JAL R15, target` (1 instr).
+- Función **leaf** (no contiene CALL): RET = `JR R15`.
+- Función **non-leaf**: prologue `ADDI R14,-4; SW R15,R14,0`; epilogue
+  `LW R15,R14,0; ADDI R14,+4; JR R15`. R14 = stack pointer del callstack.
+- **Handlers** (CUADRO, INICIONIVEL, etc.): tratados como leaf-equivalent;
+  el JS sentinel los invoca directo y no necesitan prologue.
+- **Convención obligatoria del programador**: cada handler debe terminar
+  con `RET` explícito. Si fall-through llegaría a otra función, el
+  transpiler inserta un RET sintético (preserva semántica v2-A pero
+  evita ejecutar el prologue del siguiente ente-point dos veces).
 
 ## 6. MMIO map para coprocesadores
 
@@ -136,55 +151,65 @@ se mantienen intactos. La transpilación delega:
 - `SON/RUI/SIL` → `STW $MR_PLAY/$MR_NOISE/$MR_SILENCE,val`.
 - `CARNIV` → `STW $MR_CARNIV,val`.
 - `COL/COLM/PIE/DIS` → `STW COL_CMD args; LW COL_RESULT`.
-- `BTN/TEC/ALE/X/Y/...` → `LW` directo a STATE.
+- `BTN/TEC` con índice literal → `LBU` directo a `BTN_STATE_BASE+lit`
+  (3 instr).
+- `X/Y/VX/VY/VIS` con índice de actor literal → `LH/LBU` directo al
+  campo del slot de actor (3-4 instr).
+- `ALE(n)` con `n` literal → `LW $RNG; REMU R1, R1, n` (4 instr).
+- `SEN/COS(deg)` → AND 0xFF, *2, ADD `TRIG_LUT_BASE`, `LH` (5 instr).
 
-Direcciones reservadas para v2 (no implementadas en el intérprete JS
-todavía):
+Direcciones del MMIO bus implementadas en el intérprete RVM-32:
 
 ```
-0x0B100  GPU_CMD          BLIT_SPR, FILL_REC, BLIT_SPR_AFFINE,
-                          BLIT_SPR_ALPHA, BLIT_MAP, ...
-0x0B104  GPU_ARG0..ARG7   8 words de args
-0x0B124  GPU_STATUS       bit0 = busy
-0x0B200  COL_CMD          a1, a2 → bool
-0x0B204  COL_RESULT
-0x0B210  COLM_CMD         actor, mapa
-0x0B300  RNG              xorshift32 hw
-0x0B304  RNG_SEED
-0x0B400  BLEND_TABLE      256 bytes (alpha lookup, ver §18.5)
+0x0A700  TRIG_LUT         256 × Int16 = sin(i/256 * 2π) * 1000  ✅
+                          (cos(deg) = sin(deg + 64))
+0x0B100  CMD              comandos GPU/audio/query (ver mmio.js)  ✅
+0x0B104  ARG0..ARG7       8 words de args                         ✅
+0x0B124  STATUS           bit0 = busy (no usado en JS)
+0x0B130  RESULT           valor de retorno de queries             ✅
+0x0B300  RNG              LW: lee siguiente xorshift32 + avanza   ✅
+0x0B304  RNG_SEED         SW: setea seed del RNG                  ✅
 ```
+
+`Q_DIV`/`Q_MOD` ya no se emiten — el transpiler usa `DIV`/`REM`/`DIVU`/`REMU`
+nativos. Los códigos siguen reservados en `mmio.js` por compat.
 
 ## 7. Cobertura del transpilador (estado actual)
 
-| v2-A class                          | Cobertura v1 |
-|-------------------------------------|--------------|
+| v2-A class                          | Cobertura |
+|-------------------------------------|-----------|
 | `NOP`, `HALT`                        | ✅ |
 | `LDI`, `LDV`, `STV`                  | ✅ |
-| `ADDV/SUBV/MULV` (compound assign)   | ✅ (DIV no soportado) |
+| `ADDV/SUBV/MULV/DIVV` (compound)     | ✅ |
 | `LDA/STA` (Mn arrays)                | ✅ |
 | `ADD/SUB/MUL/AND/OR`                 | ✅ |
-| `DIV/MOD`                            | ❌ — requiere libc helper |
-| `NEG`                                | ✅ |
+| `DIV/MOD`                            | ✅ opcodes nativos `DIV`/`REM`/`DIVU`/`REMU` |
+| `NEG/ABS/SGN/MIN/MAX`                | ✅ inline native |
 | `LT/LE/GT/GE/EQ/NE`                  | ✅ |
-| `AND` (lógico booleano)              | parcial — usar bitwise como puente |
-| `OR/NOT` lógicos                     | ✅ NOT, OR pendiente |
+| `AND/OR/NOT` lógicos                 | ✅ |
 | `JMP/JZ/JNZ`                         | ✅ |
-| `CALL/RET`                           | ❌ v1 (requiere modelo de callstack) |
-| `PARINIT/PARSIG`                     | ❌ v1 (requiere loop frames) |
-| Memoria `LDM/STM/LDW/STW/LDR/STR`    | ❌ v1 |
-| `MEMCPY/MEMSET`                      | ❌ v1 |
-| Builtins gráficos/audio              | ❌ v1 (requiere MMIO commands) |
-| Queries (X/Y/COL/BTN/...)            | ❌ v1 |
-| `TXT`, `SEN/COS/RAI`                 | ❌ v1 (requiere libc trig + font) |
+| `CALL/RET`                           | ✅ callee-saves-link + leaf/non-leaf CFG analysis |
+| `PARINIT/PARSIG`                     | ✅ frames en memoria (FREE+0x30000) |
+| Memoria `LDM/STM/LDW/STW/LDR/STR`    | ✅ via MMIO + base table |
+| `MEMCPY/MEMSET`                      | ✅ via MMIO commands |
+| Builtins gráficos/audio              | ✅ via MMIO `CMD` bus |
+| Queries actor (X/Y/VX/VY/VIS/PIE)    | ✅ peephole `LDI lit; QUERY` → LH directo a STATE |
+| Queries `BTN/TEC` literales          | ✅ peephole `LDI lit; BTN` → LBU directo |
+| `COL/COLM/DIS`                       | ✅ via MMIO query helper |
+| `ALE(n)` literal                     | ✅ peephole → LW $RNG + REMU |
+| `SEN/COS`                            | ✅ trig LUT (Int16, 256 entradas en 0x0A700) |
+| `RAI`                                | ✅ via MMIO query (Newton-Raphson en libc) |
+| `TXT`                                | ✅ via MMIO command |
 
-**Cobertura suficiente para**: programas aritméticos, comparaciones,
-saltos, asignaciones a variables y arrays. Los tests
-[tests/unit/rvm32-transpile.test.js](tests/unit/rvm32-transpile.test.js)
-verifican 8 escenarios cosim contra el intérprete v2-A.
+**Cosim cubierto**: los 9 reference games del repo
+([tests/integration/rvm32-games.test.js](tests/integration/rvm32-games.test.js))
+corren idénticos byte-a-byte sobre v2-A y RVM-32 (vars + framebuffer).
+Espacial tolera ≤256 px de diff por orden de evaluación de `ALE`.
 
-**Roadmap**: completar CALL/RET, PARINIT/PARSIG, memoria absoluta,
-builtins (via MMIO), queries — en ese orden. Ver tabla completa en
-PLAN.md §19.
+**Convención del programador**: cada handler debe terminar con `RET`
+explícito. Si no, el transpiler emite un RET sintético antes del
+siguiente function entry para no ejecutar un prologue de más. Ejemplo:
+[games/serpiente.retro:99](../games/serpiente.retro#L99) (`LLA 800:RET`).
 
 ## 8. Hardware target
 

@@ -109,6 +109,9 @@ export function runRVM32(rvmState, vmState, vmRef, code, startPc, options = {}) 
         const aMasked = (addr >>> 0) & 0x7FFFF;
         if (aMasked === MMIO_RESULT) {
           regs[d.rd] = rvmState.mmioResult | 0;
+        } else if (aMasked === 0xB300) {
+          // $RNG register: cada lectura avanza xorshift32 y devuelve el valor.
+          regs[d.rd] = nextRandom(vmState) | 0;
         } else {
           regs[d.rd] = readWord(vmState, vmRef, addr) | 0;
         }
@@ -119,11 +122,47 @@ export function runRVM32(rvmState, vmState, vmRef, code, startPc, options = {}) 
         writeByte(vmState, vmRef, addr, regs[d.rd] & 0xff);
         break;
       }
+      case RVM_OP.LH: {
+        const addr = (regs[d.rs1] + d.imm16) | 0;
+        const aM = (addr >>> 0) & 0x7FFFF;
+        // Trig LUT @ STATE_BASE + 0x2700 = 0x0A700 (256 × Int16).
+        if (aM >= 0x0A700 && aM < 0x0A900 && vmRef.trigLut) {
+          regs[d.rd] = vmRef.trigLut[(aM - 0x0A700) >> 1] | 0;
+          break;
+        }
+        const lo = readByte(vmState, vmRef, addr);
+        const hi = readByte(vmState, vmRef, addr + 1);
+        const u = (lo | (hi << 8)) & 0xffff;
+        regs[d.rd] = (u << 16) >> 16;
+        break;
+      }
+      case RVM_OP.LHU: {
+        const addr = (regs[d.rs1] + d.imm16) | 0;
+        const aM = (addr >>> 0) & 0x7FFFF;
+        if (aM >= 0x0A700 && aM < 0x0A900 && vmRef.trigLut) {
+          regs[d.rd] = vmRef.trigLut[(aM - 0x0A700) >> 1] & 0xffff;
+          break;
+        }
+        const lo = readByte(vmState, vmRef, addr);
+        const hi = readByte(vmState, vmRef, addr + 1);
+        regs[d.rd] = (lo | (hi << 8)) & 0xffff;
+        break;
+      }
+      case RVM_OP.SH: {
+        const addr = (regs[d.rs1] + d.imm16) | 0;
+        const v = regs[d.rd] & 0xffff;
+        writeByte(vmState, vmRef, addr, v & 0xff);
+        writeByte(vmState, vmRef, addr + 1, (v >>> 8) & 0xff);
+        break;
+      }
       case RVM_OP.SW: {
         const addr = (regs[d.rs1] + d.imm16) | 0;
         const aMasked = (addr >>> 0) & 0x7FFFF;
         if (aMasked >= MMIO_BASE && aMasked < MMIO_END) {
           handleMmioWrite(rvmState, vmState, vmRef, aMasked, regs[d.rd] | 0);
+        } else if (aMasked === 0xB304) {
+          // $RNG_SEED: setea el seed del PRNG (usar 0 → 1 fallback).
+          vmState.seed = (regs[d.rd] | 0) || 1;
         } else {
           writeWord(vmState, vmRef, addr, regs[d.rd] | 0);
         }
@@ -140,6 +179,28 @@ export function runRVM32(rvmState, vmState, vmRef, code, startPc, options = {}) 
       case RVM_OP.SHR: regs[d.rd] = regs[d.rs1] >>> (regs[d.rs2] & 31); break;
       case RVM_OP.SAR: regs[d.rd] = regs[d.rs1] >> (regs[d.rs2] & 31); break;
       case RVM_OP.MUL: regs[d.rd] = Math.imul(regs[d.rs1], regs[d.rs2]); break;
+      case RVM_OP.DIV: {
+        const b = regs[d.rs2] | 0;
+        regs[d.rd] = b === 0 ? 0 : ((regs[d.rs1] / b) | 0);
+        break;
+      }
+      case RVM_OP.REM: {
+        const b = regs[d.rs2] | 0;
+        regs[d.rd] = b === 0 ? 0 : ((regs[d.rs1] % b) | 0);
+        break;
+      }
+      case RVM_OP.DIVU: {
+        const a = regs[d.rs1] >>> 0;
+        const b = regs[d.rs2] >>> 0;
+        regs[d.rd] = b === 0 ? 0 : ((a / b) | 0);
+        break;
+      }
+      case RVM_OP.REMU: {
+        const a = regs[d.rs1] >>> 0;
+        const b = regs[d.rs2] >>> 0;
+        regs[d.rd] = b === 0 ? 0 : ((a % b) | 0);
+        break;
+      }
 
       // -------------------- ALU I-type --------------------
       case RVM_OP.ADDI: regs[d.rd] = (regs[d.rs1] + d.imm16) | 0; break;
@@ -224,11 +285,6 @@ function dispatchMmioCmd(rvmState, vmState, vmRef, cmd) {
       DRAW_BUILTINS.REC.fn(vmRef.fb, A[0], A[1], A[2], A[3], A[4]);
       return;
     case CMD.TXT: {
-      // ARG2 = strIdx en pool; el caller debe haber pasado vmRef.constants
-      // o equivalente. Para v1 asumimos que el transpiler emite una
-      // copia local del string en CODE region y pasa el bytePc; pero
-      // mantener constants en vmRef.rvmConstants es más simple. Si no
-      // existe, se ignora.
       const strs = vmRef.rvmConstants;
       const idx = A[2];
       const s = strs && strs[idx] ? strs[idx] : '';

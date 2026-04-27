@@ -83,4 +83,17 @@ describe('RVM-32 ISA encoding', () => {
       seen.add(code);
     }
   });
+
+  it('DIV/REM/LH/LHU/SH están definidos con formatos correctos', () => {
+    expect(RVM_OP.DIV).toBe(0x29);
+    expect(RVM_OP.REM).toBe(0x2A);
+    expect(RVM_OP.LH).toBe(0x15);
+    expect(RVM_OP.LHU).toBe(0x16);
+    expect(RVM_OP.SH).toBe(0x17);
+    expect(getFormat(RVM_OP.DIV)).toBe('R');
+    expect(getFormat(RVM_OP.REM)).toBe('R');
+    expect(getFormat(RVM_OP.LH)).toBe('I');
+    expect(getFormat(RVM_OP.LHU)).toBe('I');
+    expect(getFormat(RVM_OP.SH)).toBe('I');
+  });
 });

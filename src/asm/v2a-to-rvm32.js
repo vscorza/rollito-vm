@@ -167,6 +167,240 @@ const CMD_MEMCPY = CMD.MEMCPY;
 const CMD_MEMSET = CMD.MEMSET;
 
 // =====================================================================
+// Refactor A.4: math primitives inline native (V2-ARCH-DECISIONS §8).
+// =====================================================================
+
+// ABS x:  pop R1; SAR R2, R1, R3=31; XOR R1, R1, R2; SUB R1, R1, R2; push.
+function emitAbsInline(out) {
+  emitPop(out, 1);
+  out.push(encodeI(RVM_OP.ADDI, 3, 0, 31));
+  out.push(encodeR(RVM_OP.SAR, 2, 1, 3));
+  out.push(encodeR(RVM_OP.XOR, 1, 1, 2));
+  out.push(encodeR(RVM_OP.SUB, 1, 1, 2));
+  emitPush(out, 1);
+}
+
+// SGN x:  pop R1; SAR R2, R1, R3=31; if R1==0 push 0 else push (1 OR sign).
+function emitSgnInline(out) {
+  emitPop(out, 1);
+  out.push(encodeI(RVM_OP.ADDI, 3, 0, 31));
+  out.push(encodeR(RVM_OP.SAR, 2, 1, 3));        // R2 = -1 si neg, 0 si pos/zero
+  out.push(encodeI(RVM_OP.BEQ, 1, 0, 3));         // BEQ R1,R0 → skip 2 (zero case)
+  out.push(encodeI(RVM_OP.ADDI, 1, 0, 1));        // R1 = 1
+  out.push(encodeR(RVM_OP.OR, 1, 1, 2));          // R1 = 1 | sign (= 1 if pos, -1 if neg)
+  emitPush(out, 1);                                // push R1 (zero case skips here, R1 ya = 0)
+}
+
+// MIN(a,b) / MAX(a,b): pop b, a; if (cond a vs b) keep a else replace with b.
+function emitMinMaxInline(out, isMin) {
+  emitPop(out, 2);  // b
+  emitPop(out, 1);  // a
+  // MIN: si a < b → keep R1 (skip MOV R1=R2). BLT R1, R2, +2.
+  // MAX: si a > b → keep R1. Equivale BGE R1+1 ≥ R2 → BLT R2, R1, +2.
+  if (isMin) {
+    out.push(encodeI(RVM_OP.BLT, 1, 2, 2));   // skip next instr
+  } else {
+    out.push(encodeI(RVM_OP.BLT, 2, 1, 2));   // si b<a (= a>b), skip next
+  }
+  out.push(encodeR(RVM_OP.ADD, 1, 0, 2));     // R1 = R2 (else branch)
+  emitPush(out, 1);
+}
+
+// =====================================================================
+// Refactor B.11: SEN/COS via trig LUT en TRIG_LUT_BASE (0x0A700).
+// La LUT vive en vmRef.trigLut (Int16Array de 256), accedida con LH a
+// 0x0A700 + idx*2. COS = SEN(deg + 90°) = SEN(deg + 64) en idx-space.
+// =====================================================================
+
+const TRIG_LUT_BASE = 0x0A700;
+
+function emitTrigLut(out, isCos) {
+  emitPop(out, 1);                              // R1 = deg
+  if (isCos) {
+    out.push(encodeI(RVM_OP.ADDI, 1, 1, 64));    // +90° offset
+  }
+  out.push(encodeI(RVM_OP.ANDI, 1, 1, 0xFF));    // R1 = idx (0..255). ANDI sign-extiende imm pero 0xFF = 255 cabe.
+  out.push(encodeR(RVM_OP.ADD, 1, 1, 1));        // *2 (Int16 = 2 bytes)
+  loadImm32(out, 3, TRIG_LUT_BASE);
+  out.push(encodeR(RVM_OP.ADD, 1, 1, 3));         // R1 = LUT addr
+  out.push(encodeI(RVM_OP.LH, 1, 1, 0));           // sign-extended Int16
+  emitPush(out, 1);
+}
+
+// =====================================================================
+// Refactor B.6-11: peephole de LDI (V2-ARCH-DECISIONS §"Peephole de LDI").
+// Si el `op` actual es uno que consume sólo 1 arg desde la stack y ese
+// arg vino de un LDI immediate, fusiona con LH/LBU directos a la
+// región correspondiente sin tocar el eval stack del v2-A.
+//
+// Retorna true si la fusión ocurrió. False: el caller debe flush el LDI
+// y continuar con la emisión normal.
+// =====================================================================
+
+// Offsets de los fields del actor (Int16, 2 bytes c/u). Coinciden con
+// src/core/sprites.js: F_X..F_VY.
+const ACTOR_FIELD_OFFSET = {
+  X:    0,   // F_X
+  Y:    2,   // F_Y * 2 bytes
+  VX:   4,
+  VY:   6,
+  FLAGS: 8,
+};
+const STATE_ACTORS_OFFSET = 0x2080;     // offset dentro de STATE region
+const STATE_INPUT_BTN     = 0x2560;     // offset de inputState.buttons[]
+const STATE_INPUT_KEYS    = 0x2568;     // offset de inputState.keys[]
+const RNG_ADDR            = 0x0B300;
+
+function tryPeepholeLdi(out, op, opdU, ldiValue) {
+  switch (op) {
+    case OP.BTN: {
+      // BTN(b literal): LBU a STATE+0x2560+b.
+      // Validar bound 0..7. Si fuera de rango, devolver 0 (igual que MMIO).
+      if (ldiValue < 0 || ldiValue >= 8) {
+        loadImm32(out, 1, 0);
+        emitPush(out, 1);
+        return true;
+      }
+      out.push(encodeI(RVM_OP.LBU, 1, 12, STATE_INPUT_BTN + ldiValue));
+      emitPush(out, 1);
+      return true;
+    }
+    case OP.TEC: {
+      if (ldiValue < 0 || ldiValue >= 256) {
+        loadImm32(out, 1, 0);
+        emitPush(out, 1);
+        return true;
+      }
+      out.push(encodeI(RVM_OP.LBU, 1, 12, STATE_INPUT_KEYS + ldiValue));
+      emitPush(out, 1);
+      return true;
+    }
+    case OP.X_:    return peepActorField(out, ldiValue, 'X');
+    case OP.Y_:    return peepActorField(out, ldiValue, 'Y');
+    case OP.VX_:   return peepActorField(out, ldiValue, 'VX');
+    case OP.VY_:   return peepActorField(out, ldiValue, 'VY');
+    case OP.VIS:   return peepActorVis(out, ldiValue);
+    case OP.ALE:   return peepAle(out, ldiValue);
+    default:
+      return false;
+  }
+}
+
+function peepActorField(out, n, field) {
+  // n debe ser 0..31 (ACTOR_COUNT). Imm16 max es ±32767. STATE_ACTORS +
+  // n*32 + field_off cabe en imm16 para n<32.
+  if (n < 0 || n >= 32) return false;
+  const off = STATE_ACTORS_OFFSET + n * 32 + ACTOR_FIELD_OFFSET[field];
+  out.push(encodeI(RVM_OP.LH, 1, 12, off));   // signed Int16 read
+  emitPush(out, 1);
+  return true;
+}
+
+function peepActorVis(out, n) {
+  // VIS(n): (flags & FLAG_HIDDEN) ? 0 : 1. FLAG_HIDDEN = 1.
+  // Leemos F_FLAGS Int16, AND con 1, XOR con 1 → 1 si visible, 0 si hidden.
+  if (n < 0 || n >= 32) return false;
+  const off = STATE_ACTORS_OFFSET + n * 32 + ACTOR_FIELD_OFFSET.FLAGS;
+  out.push(encodeI(RVM_OP.LHU, 1, 12, off));
+  out.push(encodeI(RVM_OP.ANDI, 1, 1, 1));
+  out.push(encodeI(RVM_OP.XORI, 1, 1, 1));
+  emitPush(out, 1);
+  return true;
+}
+
+// =====================================================================
+// Refactor C.12: análisis CFG para CALL/RET callee-saves-link.
+//
+// Funciones = LLA-targets ∪ handlers. Para cada entry, walk forward DFS:
+//   - RET/HALT: terminar.
+//   - CALL: marcar la función como non-leaf, continuar.
+//   - JMP/JZ/JNZ: explorar el target + el siguiente.
+//
+// Una función es non-leaf si su walk encuentra algún CALL (LLA).
+// Las funciones non-leaf emiten prologue (ADDI R14,-4; SW R15,R14,0) en
+// el entry y epilogue (LW R15; ADDI R14,+4; JR R15) en cada RET reachable.
+// Las leaf emiten sólo JR R15 en RET, sin prologue.
+//
+// Handlers se tratan igual: si llaman, son non-leaf y necesitan
+// prologue/epilogue. R15 al entry de handlers viene del JS (sentinel
+// HLT addr); el prologue lo guarda en stack para que sobreviva CALLs.
+// =====================================================================
+
+function analyzeFunctions(v2aCode, v2aLen, handlers) {
+  const entries = new Set();
+  // Handlers como entries.
+  for (const v of Object.values(handlers)) {
+    if (typeof v === 'number') entries.add(v);
+    else if (Array.isArray(v)) {
+      for (const p of v) if (typeof p === 'number') entries.add(p);
+    }
+  }
+  // LLA targets como entries.
+  for (let i = 0; i < v2aLen; i++) {
+    const w = v2aCode[i] >>> 0;
+    if ((w & 0xff) === OP.CALL) {
+      entries.add((w >>> 8) & 0xFFFFFF);
+    }
+  }
+
+  const isNonLeafEntry = new Set();
+  const retIsNonLeaf = new Set();
+  const fnByPc = new Map();   // pc → entry de la función que lo contiene
+  for (const entry of entries) {
+    const visited = new Set();
+    const queue = [entry];
+    let nonLeaf = false;
+    const rets = [];
+    while (queue.length) {
+      const pc = queue.shift();
+      if (visited.has(pc) || pc < 0 || pc >= v2aLen) continue;
+      if (pc !== entry && entries.has(pc)) continue;
+      visited.add(pc);
+      // El primer entry que visita pc se queda con él. Subsiguientes
+      // walks (de otras funciones) no sobreescriben.
+      if (!fnByPc.has(pc)) fnByPc.set(pc, entry);
+      const w = v2aCode[pc] >>> 0;
+      const op = w & 0xff;
+      const opd = (w >>> 8) & 0xFFFFFF;
+      if (op === OP.RET || op === OP.HALT) { rets.push(pc); continue; }
+      if (op === OP.CALL) { nonLeaf = true; queue.push(pc + 1); continue; }
+      if (op === OP.JMP) { queue.push(opd); continue; }
+      if (op === OP.JZ || op === OP.JNZ) {
+        queue.push(opd);
+        queue.push(pc + 1);
+        continue;
+      }
+      if (op === OP.PARSIG) {
+        queue.push(pc + 1);
+        continue;
+      }
+      queue.push(pc + 1);
+    }
+    if (nonLeaf) {
+      isNonLeafEntry.add(entry);
+      for (const ret of rets) retIsNonLeaf.add(ret);
+    }
+  }
+  return { isNonLeafEntry, retIsNonLeaf, allEntries: entries, fnByPc };
+}
+
+function peepAle(out, n) {
+  // ALE(n_literal): LW $RNG → REMU n. v2-A usa nextRandom(state) % n
+  // donde nextRandom devuelve unsigned 32-bit. RVM-32 REMU replica.
+  if (n <= 0) {
+    loadImm32(out, 1, 0);
+    emitPush(out, 1);
+    return true;
+  }
+  loadImm32(out, 3, RNG_ADDR);
+  out.push(encodeI(RVM_OP.LW, 1, 3, 0));        // R1 = next xorshift32 (signed Int32)
+  loadImm32(out, 2, n);
+  out.push(encodeR(RVM_OP.REMU, 1, 1, 2));      // R1 = (R1 unsigned) % n
+  emitPush(out, 1);
+  return true;
+}
+
+// =====================================================================
 // transpile: input es el output de compile() del v2-A:
 //   { code: Uint32Array, codeLength, constants, handlers, lineToIdx }
 //
@@ -188,14 +422,69 @@ export function transpile(v2aProgram) {
   // bases correctas. El binario empieza directo con la traducción del
   // bytecode v2-A en v2aWordIdx=0.
 
-  for (let i = 0; i < v2aLen; i++) {
-    const startInstrIdx = out.length;
-    v2aToRvmPc.set(i, startInstrIdx * 4);
+  // Refactor C.12: análisis CFG para CALL/RET callee-saves-link.
+  // Identificamos las funciones (LLA targets + handlers) y para cada una
+  // determinamos si es non-leaf (contiene al menos un LLA en su body).
+  // Funciones non-leaf emiten prologue al entry y epilogue en cada RET.
+  const { isNonLeafEntry, retIsNonLeaf, allEntries, fnByPc } = analyzeFunctions(
+    v2aCode, v2aLen, v2aProgram.handlers,
+  );
 
+  // Refactor B.6: defer LDI peephole (V2-ARCH-DECISIONS §"Peephole de LDI").
+  // pendingLdi !== null indica que la última instrucción v2-A fue LDI y
+  // su push se difirió, esperando ver si la próxima es fusable.
+  let pendingLdi = null;
+
+  function flushPendingLdi() {
+    if (pendingLdi !== null) {
+      loadImm32(out, 1, pendingLdi.value);
+      emitPush(out, 1);
+      pendingLdi = null;
+    }
+  }
+
+  for (let i = 0; i < v2aLen; i++) {
     const word = v2aCode[i] >>> 0;
     const op = word & 0xff;
     const opd = word >> 8;          // signed 24-bit
     const opdU = (word >>> 8) & 0xFFFFFF;
+
+    // LDI: defer push, registrar el v2aPc. Si i es entry non-leaf,
+    // emitir el prologue. v2aToRvmPc[i] apunta al PROLOGUE (no a after)
+    // para que CALLs aterricen en el save.
+    if (op === OP.LDI) {
+      flushPendingLdi();
+      v2aToRvmPc.set(i, out.length * 4);
+      if (isNonLeafEntry.has(i)) {
+        out.push(encodeI(RVM_OP.ADDI, 14, 14, -4));
+        out.push(encodeI(RVM_OP.SW, 15, 14, 0));
+      }
+      pendingLdi = { value: opd, v2aPc: i };
+      continue;
+    }
+
+    // Si hay LDI deferido, intentar peephole con el opcode actual.
+    if (pendingLdi !== null) {
+      const peephRvmPc = out.length * 4;
+      if (tryPeepholeLdi(out, op, opdU, pendingLdi.value)) {
+        // NO sobreescribimos v2aToRvmPc[pendingLdi.v2aPc]: si la LDI era
+        // un function entry, ya apunta al prologue. JAL al entry pasa
+        // por el prologue y cae naturalmente al fused emit.
+        v2aToRvmPc.set(i, peephRvmPc);
+        pendingLdi = null;
+        continue;
+      }
+      flushPendingLdi();
+    }
+
+    const startInstrIdx = out.length;
+    v2aToRvmPc.set(i, startInstrIdx * 4);
+
+    // Refactor C.12: prologue de funciones non-leaf.
+    if (isNonLeafEntry.has(i)) {
+      out.push(encodeI(RVM_OP.ADDI, 14, 14, -4));
+      out.push(encodeI(RVM_OP.SW, 15, 14, 0));
+    }
 
     switch (op) {
       case OP.NOP:
@@ -203,12 +492,6 @@ export function transpile(v2aProgram) {
         break;
       case OP.HALT:
         out.push(encodeR(RVM_OP.HLT, 0, 0, 0));
-        break;
-
-      // -------------------- constantes / vars --------------------
-      case OP.LDI:
-        loadImm32(out, 1, opd);
-        emitPush(out, 1);
         break;
       case OP.LDV:
         // R1 = mem32[R12 + opdU*4]
@@ -232,15 +515,11 @@ export function transpile(v2aProgram) {
         break;
       }
       case OP.DIVV: {
-        // vars[r] = vars[r] / pop  → vía MMIO Q_DIV.
-        // Stack: ..., divisor.  ARG1 = divisor; ARG0 = vars[r].
-        emitPop(out, 1);                              // divisor
-        emitMmioStoreArg(out, 1, 1);                  // ARG1 = divisor
-        out.push(encodeI(RVM_OP.LW, 1, 12, opdU * 4)); // R1 = vars[r]
-        emitMmioStoreArg(out, 0, 1);                   // ARG0 = vars[r]
-        emitMmioCmd(out, CMD.Q_DIV);
-        emitMmioLoadResult(out, 1);                    // R1 = result
-        out.push(encodeI(RVM_OP.SW, 1, 12, opdU * 4)); // vars[r] = R1
+        // Refactor A.5: opcode nativo DIV.
+        emitPop(out, 2);                                  // divisor
+        out.push(encodeI(RVM_OP.LW, 1, 12, opdU * 4));    // R1 = vars[r]
+        out.push(encodeR(RVM_OP.DIV, 1, 1, 2));
+        out.push(encodeI(RVM_OP.SW, 1, 12, opdU * 4));
         break;
       }
 
@@ -294,11 +573,14 @@ export function transpile(v2aProgram) {
         break;
       }
       case OP.DIV:
-        emitMmioQuery(out, 2, CMD.Q_DIV);
+      case OP.MOD: {
+        // Refactor A.5: opcodes nativos DIV/REM (V2-ARCH §2).
+        emitPop(out, 2);  // b
+        emitPop(out, 1);  // a
+        out.push(encodeR(op === OP.DIV ? RVM_OP.DIV : RVM_OP.REM, 1, 1, 2));
+        emitPush(out, 1);
         break;
-      case OP.MOD:
-        emitMmioQuery(out, 2, CMD.Q_MOD);
-        break;
+      }
       case OP.NEG:
         emitPop(out, 1);
         out.push(encodeR(RVM_OP.SUB, 1, 0, 1));
@@ -365,16 +647,30 @@ export function transpile(v2aProgram) {
         break;
       }
       case OP.CALL: {
-        // push R15; JAL R15, target; pop R15.
-        out.push(encodeI(RVM_OP.ADDI, 14, 14, -4));
-        out.push(encodeI(RVM_OP.SW, 15, 14, 0));
+        // Refactor C.12: callee-saves-link. CALL = JAL R15, target.
         patches.push({ rvmInstrIdx: out.length, v2aTargetWordIdx: opdU, kind: 'jal' });
         out.push(encodeJ(RVM_OP.JAL, 15, 0));
-        out.push(encodeI(RVM_OP.LW, 15, 14, 0));
-        out.push(encodeI(RVM_OP.ADDI, 14, 14, 4));
+        // Si la próxima instrucción v2-A es entrada de otra función
+        // (fall-through entre handlers), emitir un RET sintético acá
+        // para cerrar la función actual y evitar que su epilogue se
+        // ejecute dentro del siguiente function entry.
+        if (i + 1 < v2aLen && allEntries.has(i + 1)) {
+          const myFn = fnByPc.get(i);
+          if (myFn !== undefined && isNonLeafEntry.has(myFn)) {
+            out.push(encodeI(RVM_OP.LW, 15, 14, 0));
+            out.push(encodeI(RVM_OP.ADDI, 14, 14, 4));
+          }
+          out.push(encodeR(RVM_OP.JR, 0, 15, 0));
+        }
         break;
       }
       case OP.RET:
+        // En non-leaf: epilogue (LW R15; ADDI R14, +4; JR R15).
+        // En leaf/handler: sólo JR R15.
+        if (retIsNonLeaf.has(i)) {
+          out.push(encodeI(RVM_OP.LW, 15, 14, 0));
+          out.push(encodeI(RVM_OP.ADDI, 14, 14, 4));
+        }
         out.push(encodeR(RVM_OP.JR, 0, 15, 0));
         break;
 
@@ -520,13 +816,13 @@ export function transpile(v2aProgram) {
       case OP.BTN:   emitMmioQuery(out, 1, CMD.Q_BTN); break;
       case OP.TEC:   emitMmioQuery(out, 1, CMD.Q_TEC); break;
       case OP.ALE:   emitMmioQuery(out, 1, CMD.Q_ALE); break;
-      case OP.ABS_F: emitMmioQuery(out, 1, CMD.Q_ABS); break;
-      case OP.SGN:   emitMmioQuery(out, 1, CMD.Q_SGN); break;
+      case OP.ABS_F: emitAbsInline(out); break;
+      case OP.SGN:   emitSgnInline(out); break;
       case OP.RAI:   emitMmioQuery(out, 1, CMD.Q_RAI); break;
-      case OP.SEN:   emitMmioQuery(out, 1, CMD.Q_SEN); break;
-      case OP.COS:   emitMmioQuery(out, 1, CMD.Q_COS); break;
-      case OP.MIN:   emitMmioQuery(out, 2, CMD.Q_MIN); break;
-      case OP.MAX:   emitMmioQuery(out, 2, CMD.Q_MAX); break;
+      case OP.SEN:   emitTrigLut(out, false); break;
+      case OP.COS:   emitTrigLut(out, true); break;
+      case OP.MIN:   emitMinMaxInline(out, true); break;
+      case OP.MAX:   emitMinMaxInline(out, false); break;
 
       // -------------------- LDC, TXT — futuro -----------------------
       case OP.LDC:
@@ -547,6 +843,8 @@ export function transpile(v2aProgram) {
         break;
     }
   }
+  // Flush LDI deferido al fin del programa (no debería pasar pero por las dudas).
+  flushPendingLdi();
   // HLT al final por seguridad.
   out.push(encodeR(RVM_OP.HLT, 0, 0, 0));
 

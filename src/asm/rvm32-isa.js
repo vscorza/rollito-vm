@@ -38,6 +38,9 @@ export const RVM_OP = Object.freeze({
   LW:   0x12,  // I: rd ← mem32[rs1+imm16]
   SB:   0x13,  // I: mem8[rs1+imm16] ← rd[7:0]
   SW:   0x14,  // I: mem32[rs1+imm16] ← rd
+  LH:   0x15,  // I: rd ← sext(mem16[rs1+imm16])
+  LHU:  0x16,  // I: rd ← zext(mem16[rs1+imm16])
+  SH:   0x17,  // I: mem16[rs1+imm16] ← rd[15:0]
 
   // -------------------- ALU R-type (rd ← rs1 op rs2) -------------
   ADD:  0x20,
@@ -49,6 +52,10 @@ export const RVM_OP = Object.freeze({
   SHR:  0x26,  // logical right shift
   SAR:  0x27,  // arithmetic right shift
   MUL:  0x28,  // 32x32 → low 32 bits
+  DIV:  0x29,  // signed integer division (rd = (rs1/rs2)|0; div0 → 0)
+  REM:  0x2A,  // signed remainder (rd = rs1%rs2; rs2==0 → 0)
+  DIVU: 0x2B,  // unsigned div (rd = (rs1>>>0)/(rs2>>>0)|0; div0 → 0)
+  REMU: 0x2C,  // unsigned rem (rd = (rs1>>>0)%(rs2>>>0); rs2==0 → 0)
   // -------------------- ALU I-type (rd ← rs1 op imm16) -----------
   ADDI: 0x30,
   ANDI: 0x31,
@@ -144,11 +151,11 @@ export function decode(word) {
 const FORMAT = (() => {
   const f = Object.create(null);
   // R-type
-  for (const k of ['ADD','SUB','AND','OR','XOR','SHL','SHR','SAR','MUL','JR']) {
+  for (const k of ['ADD','SUB','AND','OR','XOR','SHL','SHR','SAR','MUL','DIV','REM','DIVU','REMU','JR']) {
     f[RVM_OP[k]] = 'R';
   }
   // I-type (memoria + ALU-I + branches)
-  for (const k of ['LB','LBU','LW','SB','SW',
+  for (const k of ['LB','LBU','LW','SB','SW','LH','LHU','SH',
                    'ADDI','ANDI','ORI','XORI','LUI',
                    'BEQ','BNE','BLT','BGE']) {
     f[RVM_OP[k]] = 'I';

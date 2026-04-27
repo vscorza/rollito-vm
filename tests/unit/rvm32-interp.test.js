@@ -176,3 +176,117 @@ describe('RVM-32 interpreter — memoria', () => {
     expect(rvm.pc).toBeDefined();
   });
 });
+
+describe('RVM-32 interpreter — DIV/REM nativos', () => {
+  it('DIV signed truncate', () => {
+    const { rvm } = run([
+      encodeI(RVM_OP.ADDI, 1, 0, 17),
+      encodeI(RVM_OP.ADDI, 2, 0, 5),
+      encodeR(RVM_OP.DIV, 3, 1, 2),       // 17/5 = 3
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(rvm.regs[3]).toBe(3);
+  });
+
+  it('DIV con negativos', () => {
+    const { rvm } = run([
+      encodeI(RVM_OP.ADDI, 1, 0, -17),
+      encodeI(RVM_OP.ADDI, 2, 0, 5),
+      encodeR(RVM_OP.DIV, 3, 1, 2),       // -17/5 = -3 (truncate towards 0)
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(rvm.regs[3]).toBe(-3);
+  });
+
+  it('REM signed', () => {
+    const { rvm } = run([
+      encodeI(RVM_OP.ADDI, 1, 0, 17),
+      encodeI(RVM_OP.ADDI, 2, 0, 5),
+      encodeR(RVM_OP.REM, 3, 1, 2),       // 17%5 = 2
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(rvm.regs[3]).toBe(2);
+  });
+
+  it('DIV por cero → 0 (sin throw)', () => {
+    const { rvm } = run([
+      encodeI(RVM_OP.ADDI, 1, 0, 42),
+      encodeI(RVM_OP.ADDI, 2, 0, 0),
+      encodeR(RVM_OP.DIV, 3, 1, 2),
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(rvm.regs[3]).toBe(0);
+  });
+
+  it('REM por cero → 0', () => {
+    const { rvm } = run([
+      encodeI(RVM_OP.ADDI, 1, 0, 42),
+      encodeI(RVM_OP.ADDI, 2, 0, 0),
+      encodeR(RVM_OP.REM, 3, 1, 2),
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(rvm.regs[3]).toBe(0);
+  });
+});
+
+describe('RVM-32 interpreter — LH/LHU/SH', () => {
+  it('LH sign-extiende; LHU zero-extiende', () => {
+    const { rvm } = run([
+      // STM 0x30000, 0x80; STM 0x30001, 0xFF (= 0xFF80 as Int16 → -128)
+      encodeI(RVM_OP.LUI, 1, 0, 3),                     // R1 = 0x30000
+      encodeI(RVM_OP.ADDI, 2, 0, 0x80),
+      encodeI(RVM_OP.SB, 2, 1, 0),
+      encodeI(RVM_OP.ADDI, 2, 0, 0xFF),
+      encodeI(RVM_OP.SB, 2, 1, 1),
+      encodeI(RVM_OP.LH, 3, 1, 0),                       // R3 = -128 (signed)
+      encodeI(RVM_OP.LHU, 4, 1, 0),                      // R4 = 0xFF80 (unsigned)
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(rvm.regs[3]).toBe(-128);
+    expect(rvm.regs[4]).toBe(0xFF80);
+  });
+
+  it('SH escribe 2 bytes little-endian', () => {
+    const { rvm, vmRef } = run([
+      encodeI(RVM_OP.LUI, 1, 0, 3),                     // R1 = 0x30000
+      encodeI(RVM_OP.ADDI, 2, 0, 0x1234),
+      encodeI(RVM_OP.SH, 2, 1, 0),
+      encodeI(RVM_OP.LBU, 3, 1, 0),                       // 0x34
+      encodeI(RVM_OP.LBU, 4, 1, 1),                       // 0x12
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(rvm.regs[3]).toBe(0x34);
+    expect(rvm.regs[4]).toBe(0x12);
+  });
+});
+
+describe('RVM-32 interpreter — $RNG register', () => {
+  it('LW de $RNG (0xB300) avanza xorshift32', () => {
+    const { rvm, state } = run([
+      encodeI(RVM_OP.LUI, 1, 0, 0),                  // R1 = 0
+      // Usar half-trick para 0xB300: 0x5980 + 0x5980 = 0xB300.
+      encodeI(RVM_OP.ADDI, 1, 0, 0x5980),
+      encodeR(RVM_OP.ADD, 1, 1, 1),                  // R1 = 0xB300
+      encodeI(RVM_OP.LW, 2, 1, 0),                   // R2 = next rng
+      encodeI(RVM_OP.LW, 3, 1, 0),                   // R3 = next next rng
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    // R2 y R3 distintos (xorshift produce distintos valores cada vez).
+    expect(rvm.regs[2]).not.toBe(0);
+    expect(rvm.regs[3]).not.toBe(0);
+    expect(rvm.regs[2]).not.toBe(rvm.regs[3]);
+    expect(state.seed).not.toBe(0);
+  });
+
+  it('STW a $RNG_SEED (0xB304) setea el seed', () => {
+    const { state } = run([
+      encodeI(RVM_OP.ADDI, 1, 0, 12345),             // R1 = 12345
+      encodeI(RVM_OP.ADDI, 2, 0, 0x5980),
+      encodeR(RVM_OP.ADD, 2, 2, 2),                  // R2 = 0xB300
+      encodeI(RVM_OP.ADDI, 2, 2, 4),                 // R2 = 0xB304
+      encodeI(RVM_OP.SW, 1, 2, 0),                   // [R2] = R1
+      encodeR(RVM_OP.HLT, 0, 0, 0),
+    ]);
+    expect(state.seed).toBe(12345);
+  });
+});
