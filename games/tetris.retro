@@ -1,0 +1,462 @@
+; ===============================================
+; tetris.retro — clásico de las 7 piezas con rotación,
+; soft-drop y line clear. Demuestra:
+;   - tablas de piezas en M0 (4 cells empacadas en 1 int)
+;   - PAR/SIG anidados para iterar el grid
+;   - LDR/STR(MAP) + MEMCPY para shift de filas al limpiar
+;   - $MR_PLAY (v2-E) para disparar SFX por evento
+;   - debounce de inputs con M1/M2
+; Controles: ← → mover · ↓ soft drop · Z rotar · X drop hard
+; ===============================================
+
+JUEGO Tetris
+AUTOR Demo
+VERSION 1
+
+; --- Sprites: 7 piezas + 1 borde ---------------
+;   Cada pieza es un cuadrado 8x8 sólido. El tile 0 del mapa queda
+;   transparente (fondo negro) — sólo se dibujan tiles 1..7.
+
+SPRITE 1 8x8
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+CCCCCCCC
+
+SPRITE 2 8x8
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+AAAAAAAA
+
+SPRITE 3 8x8
+EEEEEEEE
+EEEEEEEE
+EEEEEEEE
+EEEEEEEE
+EEEEEEEE
+EEEEEEEE
+EEEEEEEE
+EEEEEEEE
+
+SPRITE 4 8x8
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+BBBBBBBB
+
+SPRITE 5 8x8
+88888888
+88888888
+88888888
+88888888
+88888888
+88888888
+88888888
+88888888
+
+SPRITE 6 8x8
+99999999
+99999999
+99999999
+99999999
+99999999
+99999999
+99999999
+99999999
+
+SPRITE 7 8x8
+11111111
+11111111
+11111111
+11111111
+11111111
+11111111
+11111111
+11111111
+
+; --- Mapa 0: tablero 10x20 ---------------------
+MAPA 0 10x20
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+0000000000
+
+; --- Sonidos ---------------------------------
+SONIDO 0
+ONDA PUL
+PUL 8
+ENV 0,1,8,1
+NOTA DO5 2
+FIN
+
+SONIDO 1
+ONDA PUL
+PUL 4
+ENV 0,1,12,2
+NOTA SOL5 2
+NOTA DO6 4
+FIN
+
+SONIDO 2
+ONDA TRI
+ENV 1,2,12,4
+NOTA DO4 6
+NOTA FA3 8
+FIN
+
+PROGRAMA
+10 EN INICIOJUEGO IR 90
+20 EN INICIONIVEL IR 200
+30 EN CUADRO IR 100
+
+; --- INICIOJUEGO -----------------------------
+;   Carga las 28 entradas de la tabla de piezas en M0.
+;   M0(T*4 + R) = 4 celdas empacadas: cell0 + cell1*16 + cell2*256
+;                                     + cell3*4096
+;   Cada celda = y*4 + x, con (x,y) en 0..3 dentro de la caja 4x4.
+;   Detalles del encoding en el comentario al pie del archivo.
+
+90 LIM 0,0,0,320,200
+92 VID=3
+94 LLA 1000           ; cargar tabla de piezas
+96 RET
+
+; --- INICIONIVEL: borrar tablero + spawn ------
+200 MEMSET $MAP_BASE,0,200    ; cells 0..199 de MAPA 0 = 0
+205 STW $MR_REPAINT,0
+210 PUN=0:NIV=0:Z=0
+215 G=ALE(7)                  ; pieza siguiente
+220 LLA 2000                  ; spawn (lee G y rota)
+225 F=30                      ; cuadros entre caída automática
+230 E=0                       ; contador
+235 M1(0)=0:M1(1)=0:M1(2)=0   ; debounce L/R/down
+240 M1(3)=0:M1(4)=0           ; debounce Z (rotar) / X (hard drop)
+245 RET
+
+; --- CUADRO ----------------------------------
+100 SI Z<>0 ENT IR 180        ; game over: sólo HUD
+105 LLA 3000                  ; lee inputs (debounceados)
+110 E=E+1
+115 SI E<F ENT 130
+120 E=0
+125 LLA 4000                  ; tick gravedad (caer 1)
+130 LLA 8000                  ; dibuja la pieza viva
+135 LLA 9000                  ; HUD
+140 RET
+
+180 LLA 9000                  ; HUD en game over
+185 TXT 12,80,"GAME OVER",8
+190 RET
+
+; --- 1000: cargar tabla de piezas en M0 -------
+;   Una sola vez, en INICIOJUEGO.
+
+1000 M0(0)=30292:M0(1)=60002
+1005 M0(2)=47768:M0(3)=55633
+1010 M0(4)=43365:M0(5)=43365
+1015 M0(6)=43365:M0(7)=43365
+1020 M0(8)=38484:M0(9)=38209
+1025 M0(10)=25921:M0(11)=38481
+1030 M0(12)=39013:M0(13)=38208
+1035 M0(14)=39013:M0(15)=38208
+1040 M0(16)=43348:M0(17)=34113
+1045 M0(18)=43348:M0(19)=34113
+1050 M0(20)=34388:M0(21)=38160
+1055 M0(22)=25922:M0(23)=43345
+1060 M0(24)=25920:M0(25)=38177
+1065 M0(26)=42580:M0(27)=38993
+1070 RET
+
+; --- 2000: spawn de la pieza siguiente --------
+;   A=G (tipo), B=3 (col del 4x4), C=0 (fila), D=0, G=ALE(7).
+;   Si la nueva pieza colisiona al spawn → game over.
+
+2000 A=G
+2005 G=ALE(7)
+2010 B=3:C=0:D=0
+2015 LLA 7000
+2020 SI H<>0 ENT Z=1
+2025 SI Z=1 ENT SON 2,2
+2030 RET
+
+; --- 3000: input + debounce -------------------
+;   M1(b) = 1 mientras está presionado; reset al soltar.
+
+3000 SI BTN(0) ENT LLA 3100
+3005 SI BTN(0)=0 ENT M1(0)=0
+3010 SI BTN(1) ENT LLA 3200
+3015 SI BTN(1)=0 ENT M1(1)=0
+3020 SI BTN(3) ENT LLA 3300
+3025 SI BTN(3)=0 ENT M1(2)=0
+3030 SI BTN(4) ENT LLA 3400
+3035 SI BTN(4)=0 ENT M1(3)=0
+3040 SI BTN(5) ENT LLA 3500
+3045 SI BTN(5)=0 ENT M1(4)=0
+3050 RET
+
+; ← mover izquierda (debounce con repeat cada 8 cuadros)
+3100 SI M1(0)>0 ENT 3115
+3105 M1(0)=1:LLA 5000:RET
+3115 M1(0)=M1(0)+1
+3120 SI M1(0)<8 ENT RET
+3125 M1(0)=1:LLA 5000:RET
+
+; → mover derecha (debounce)
+3200 SI M1(1)>0 ENT 3215
+3205 M1(1)=1:LLA 5100:RET
+3215 M1(1)=M1(1)+1
+3220 SI M1(1)<8 ENT RET
+3225 M1(1)=1:LLA 5100:RET
+
+; ↓ soft drop (cada 2 cuadros)
+3300 SI M1(2)>0 ENT 3315
+3305 M1(2)=1:LLA 4000:RET
+3315 M1(2)=M1(2)+1
+3320 SI M1(2)<2 ENT RET
+3325 M1(2)=1:LLA 4000:RET
+
+; Z rotar (sólo en flanco de subida)
+3400 SI M1(3)<>0 ENT RET
+3405 M1(3)=1:LLA 5200
+3410 RET
+
+; X hard drop (sólo en flanco de subida)
+3500 SI M1(4)<>0 ENT RET
+3505 M1(4)=1:LLA 6000
+3510 RET
+
+; --- 4000: tick de gravedad -------------------
+;   Bajar 1; si colisiona, lock + line clear + spawn nuevo.
+
+4000 C=C+1
+4005 LLA 7000
+4010 SI H=0 ENT RET
+4015 C=C-1                 ; revertir
+4020 LLA 6500              ; lock + clear
+4025 LLA 2000              ; spawn siguiente
+4030 RET
+
+; --- 5000: try-move izquierda ----------------
+5000 B=B-1:LLA 7000
+5005 SI H<>0 ENT B=B+1
+5010 RET
+
+; --- 5100: try-move derecha ------------------
+5100 B=B+1:LLA 7000
+5105 SI H<>0 ENT B=B-1
+5110 RET
+
+; --- 5200: try-rotate ------------------------
+5200 D=(D+1)%4
+5205 LLA 7000
+5210 SI H<>0 ENT D=(D+3)%4
+5215 SON 0,1
+5220 RET
+
+; --- 6000: hard drop --------------------------
+;   Baja todo lo posible y luego lock.
+
+6000 C=C+1:LLA 7000
+6005 SI H=0 ENT IR 6000
+6010 C=C-1
+6015 LLA 6500
+6020 LLA 2000
+6025 RET
+
+; --- 6500: lock + clear lines + score ---------
+;   Lock: por cada celda de la pieza, escribir tile (A+1).
+;   Después limpiar líneas llenas con compactación bottom-up.
+
+6500 LLA 7100              ; lock cells
+6505 LLA 7500              ; clear+compact lines
+6510 SI L=0 ENT IR 6540
+6515 SON 1,2:STW $MR_REPAINT,0
+6520 SI L=1 ENT PUN+=100
+6525 SI L=2 ENT PUN+=300
+6530 SI L=3 ENT PUN+=500
+6535 SI L>=4 ENT PUN+=800
+6540 NIV=PUN/1000
+6545 F=30-NIV*3
+6550 SI F<5 ENT F=5
+6555 RET
+
+; --- 7000: collide check ----------------------
+;   Itera las 4 celdas de la pieza (A,D). H=1 si choca con borde
+;   o con un tile no-cero del tablero, H=0 si OK.
+
+7000 H=0
+7002 P=M0(A*4+D)
+7005 K=1                   ; divisor (1, 16, 256, 4096)
+7010 PAR I=0 A 3
+7015 N=(P/K)%16            ; celda c = N
+7020 X=N%4:Y=N/4
+7025 X=B+X:Y=C+Y           ; pos absoluta en grid
+7030 SI X<0 ENT H=1
+7035 SI X>=10 ENT H=1
+7040 SI Y>=20 ENT H=1
+7045 SI Y<0 ENT IR 7060
+7050 SI H=1 ENT IR 7060
+7055 SI TIL(0,X,Y)<>0 ENT H=1
+7060 K=K*16
+7065 SIG
+7070 RET
+
+; --- 7100: lock — escribe tiles del piece -----
+7100 P=M0(A*4+D)
+7105 K=1
+7110 PAR I=0 A 3
+7115 N=(P/K)%16
+7120 X=N%4:Y=N/4
+7125 X=B+X:Y=C+Y
+7130 SI Y<0 ENT IR 7150
+7135 SI Y>=20 ENT IR 7150
+7140 SI X<0 ENT IR 7150
+7145 STR $RMAP,0,Y*10+X,A+1
+7150 K=K*16
+7155 SIG
+7160 RET
+
+; --- 7500: line clear con compactación bottom-up
+;   WP = write-pointer (fila destino, empieza en 19).
+;   Para cada fila r de 19 a 0:
+;     contar cells != 0 en r
+;     si k<10: copiar fila r → fila WP, WP--
+;   Filas 0..WP quedan vacías.
+
+7500 W=19
+7505 PAR I=0 A 19
+7510 R=19-I                ; fila a leer
+7515 K=0
+7520 PAR J=0 A 9
+7525 SI TIL(0,J,R)<>0 ENT K=K+1
+7530 SIG
+7535 SI K=10 ENT IR 7560   ; fila llena: la "comemos"
+7540 SI W=R ENT IR 7555    ; ya está en su lugar
+7545 MEMCPY $MAP_BASE+R*10,$MAP_BASE+W*10,10
+7555 W=W-1
+7560 SIG
+; Después: filas 0..W deben quedar vacías (si W>=0).
+7565 SI W<0 ENT IR 7580
+7570 PAR I=0 A W
+7575 MEMSET $MAP_BASE+I*10,0,10
+7578 SIG
+7580 L=W+1                 ; líneas eliminadas
+7585 RET
+
+; --- 8000: dibuja la pieza viva ---------------
+;   Por cada celda, SPR (A+1) en (X*8, Y*8).
+8000 P=M0(A*4+D)
+8005 K=1
+8010 PAR I=0 A 3
+8015 N=(P/K)%16
+8020 X=N%4:Y=N/4
+8025 X=(B+X)*8:Y=(C+Y)*8
+8030 SI Y<0 ENT IR 8045
+8035 SI Y>=160 ENT IR 8045
+8040 SPR A+1,X,Y
+8045 K=K*16
+8050 SIG
+8055 RET
+
+; --- 9000: HUD --------------------------------
+9000 TXT 88,8,"PUN",7
+9005 TXT 88,18,"NIV",7
+9010 TXT 88,40,"PROX",7
+9015 TXT 120,8,"   ",0     ; limpiar números viejos (REC alternativa)
+9020 REC 120,6,80,10,0
+9025 REC 120,16,80,10,0
+9030 LLA 9100              ; render PUN
+9035 LLA 9300              ; render NIV
+9040 LLA 9500              ; preview de pieza siguiente
+9045 RET
+
+; --- 9100: render PUN como entero ---
+;   Soporta 0..9999. Convertimos dígito a dígito en M2(0..3).
+9100 H=PUN
+9105 M2(0)=H/1000:H=H%1000
+9110 M2(1)=H/100:H=H%100
+9115 M2(2)=H/10:M2(3)=H%10
+9120 X=120
+9125 PAR I=0 A 3
+9130 SI M2(I)=0 ENT TXT X,8,"0",7
+9135 SI M2(I)=1 ENT TXT X,8,"1",7
+9140 SI M2(I)=2 ENT TXT X,8,"2",7
+9145 SI M2(I)=3 ENT TXT X,8,"3",7
+9150 SI M2(I)=4 ENT TXT X,8,"4",7
+9155 SI M2(I)=5 ENT TXT X,8,"5",7
+9160 SI M2(I)=6 ENT TXT X,8,"6",7
+9165 SI M2(I)=7 ENT TXT X,8,"7",7
+9170 SI M2(I)=8 ENT TXT X,8,"8",7
+9175 SI M2(I)=9 ENT TXT X,8,"9",7
+9180 X=X+8
+9185 SIG
+9190 RET
+
+; --- 9300: render NIV como entero (0..9) ---
+9300 SI NIV=0 ENT TXT 120,18,"0",7
+9305 SI NIV=1 ENT TXT 120,18,"1",7
+9310 SI NIV=2 ENT TXT 120,18,"2",7
+9315 SI NIV=3 ENT TXT 120,18,"3",7
+9320 SI NIV=4 ENT TXT 120,18,"4",7
+9325 SI NIV=5 ENT TXT 120,18,"5",7
+9330 SI NIV>=6 ENT TXT 120,18,"+",7
+9335 RET
+
+; --- 9500: preview de pieza siguiente ---
+;   Dibuja la pieza G en R=0 dentro de un cuadro a la derecha.
+9500 REC 88,50,40,40,0
+9505 P=M0(G*4)
+9510 K=1
+9515 PAR I=0 A 3
+9520 N=(P/K)%16
+9525 X=N%4:Y=N/4
+9530 X=92+X*8:Y=54+Y*8
+9535 SPR G+1,X,Y
+9540 K=K*16
+9545 SIG
+9550 RET
+
+; ===============================================
+; Encoding de M0 (tabla de piezas):
+;
+;   M0(T*4 + R) = 16-bit packed con 4 celdas, cada celda = y*4 + x
+;   donde (x,y) son las coordenadas dentro de una caja 4x4 (0..3).
+;
+;   cell_i ocupa los bits (i*4)..(i*4+3) del valor.
+;
+;   Piezas implementadas (T):
+;     0: I    1: O    2: T    3: S
+;     4: Z    5: L    6: J
+;
+;   Rotaciones (R) 0..3 son CW (clockwise). Para piezas con menos
+;   simetría que 4 estados, las rotaciones extras se duplican.
+; ===============================================

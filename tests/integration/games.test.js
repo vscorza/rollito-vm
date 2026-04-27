@@ -143,4 +143,28 @@ describe('Smoke tests de los 5 ejemplos canónicos', () => {
     expect(vm.state.vars[30]).toBe(1);  // NIV
     expect(vm.mapState.activeBackground).toBe(1);
   });
+
+  it('tetris.retro: spawn + caída + lock + line clear', () => {
+    const vm = smoke('tetris', 5);
+    // Pieza activa visible, cells en M0 cargadas.
+    expect(vm.state.vars[1]).toBe(3);     // B = col 3
+    expect(vm.state.vars[2]).toBe(0);     // C = row 0
+    expect(vm.state.arrays[0]).toBe(30292);  // I-piece R=0 packed
+    // Tras varios cuadros la pieza baja.
+    for (let i = 0; i < 60; i++) vm.runFrame();
+    expect(vm.state.vars[2]).toBeGreaterThan(0);
+    // Forzar 1 line clear: llenar fila 19 excepto col 4-5, spawn O en col 3.
+    for (let c = 0; c < 10; c++) {
+      if (c !== 4 && c !== 5) vm.mapState.maps[0].cells[19 * 10 + c] = 7;
+    }
+    vm.mapState.maps[0].dirty = true;
+    vm.state.vars[6] = 1;       // G = O
+    vm.state.vars[0] = 1;       // A = O
+    vm.state.vars[1] = 3;       // B
+    vm.state.vars[2] = 0;       // C
+    vm.state.vars[3] = 0;       // D
+    vm.inputState.buttons[5] = 1; vm.runFrame();
+    vm.inputState.buttons[5] = 0; vm.runFrame();
+    expect(vm.state.vars[29]).toBe(100);  // PUN += 100 (1 línea)
+  });
 });
