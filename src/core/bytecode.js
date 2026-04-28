@@ -106,8 +106,9 @@ export const OP = Object.freeze({
   RUI:     0x81,
   SIL:     0x82,
 
-  // Lifecycle.
+  // Lifecycle / display.
   CARNIV:  0x90,
+  PAL:     0x91,  // PAL n — set active palette bank (REFERENCIA §8)
 
   // Funciones de consulta (push resultado).
   COL:     0xA0,

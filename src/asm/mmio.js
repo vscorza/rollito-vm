@@ -77,8 +77,9 @@ export const CMD = Object.freeze({
   RUI:   0x41,  // ARG0 = n
   SIL:   0x42,  // ARG0 = c
 
-  // Lifecycle
+  // Lifecycle / display
   CARNIV: 0x50, // ARG0 = n
+  PAL:    0x51, // ARG0 = n (set active palette bank)
 
   // -------------------- queries (result en MMIO_RESULT) --------------
   // Actor-state reads

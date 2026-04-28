@@ -357,15 +357,19 @@ Función. Devuelve el índice de tile en columna `c`, fila `f` del mapa `m`.
 ## 8. Paletas
 
 ### `PAL n`
-Cambia la paleta activa. Toma efecto en el próximo cuadro.
+Cambia la paleta activa al banco `n` (0..3). Toma efecto en el próximo
+blit. Las paletas se declaran en el header con `PALETA n` (§1) — `PAL`
+sólo selecciona cuál está activa.
 
 ```
 10 PAL 1                          ;  8
 ```
 
-> **No implementado todavía** como statement: el sistema multi-paleta vive
-> al nivel del bank (`createPaletteBank`/`setActivePalette`/
-> `setScanlinePalette`). El statement `PAL n LINEA|NIVEL` queda reservado.
+`n` fuera de [0,3] es ignorado silenciosamente (no rompe el juego).
+
+> **Multi-banco scanline**: la variante `PAL n LINEA|NIVEL` (override
+> por scanline) sigue reservada. El motor tiene `setScanlinePalette`
+> en JS pero no hay statement v2-A todavía.
 
 ---
 

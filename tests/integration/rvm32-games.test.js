@@ -92,6 +92,7 @@ describe('Cosim de juegos: v2-A ↔ RVM-32', () => {
     { name: 'mario-mini', fbMax: 0 },
     { name: 'tetris',     fbMax: 0 },
     { name: 'espacial',   fbMax: 256 },
+    { name: 'rollox',     fbMax: 0 },
   ];
   for (const g of games) {
     it(`${g.name}: vars match + fb diff ≤ ${g.fbMax}`, () => {

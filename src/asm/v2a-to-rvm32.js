@@ -801,6 +801,7 @@ export function transpile(v2aProgram) {
       case OP.RUI:    emitMmioStmt(out, 1, CMD.RUI); break;
       case OP.SIL:    emitMmioStmt(out, 1, CMD.SIL); break;
       case OP.CARNIV: emitMmioStmt(out, 1, CMD.CARNIV); break;
+      case OP.PAL:    emitMmioStmt(out, 1, CMD.PAL);    break;
 
       // -------------------- queries (push result) -----------------
       case OP.X_:    emitMmioQuery(out, 1, CMD.Q_X); break;

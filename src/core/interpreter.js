@@ -33,6 +33,7 @@ import {
 import { drawText } from '../builtins/text.js';
 import { DRAW_BUILTINS } from '../builtins/draw.js';
 import { playSound, playNoise, silenceChannel } from '../audio/synth.js';
+import { setActivePalette } from '../render/palette.js';
 
 // =====================================================================
 // runFromBytecode — entrypoint para handlers (CUADRO, INICIONIVEL, etc.).
@@ -528,6 +529,11 @@ export function runFromBytecode(state, vmRef, code, constants, startPc) {
         const n = stack[--sp] | 0;
         state.vars[VAR_INDEX.NIV] = n;
         state.pendingLevelLoad = true;
+        pc++; break;
+      }
+      case OP.PAL: {
+        const n = stack[--sp] | 0;
+        if (n >= 0 && n < 4) setActivePalette(vmRef.bank, n);
         pc++; break;
       }
 

@@ -519,3 +519,16 @@ haber armado las piezas paso a paso — vas a entender por qué cada
 decisión está así y vas a poder modificarlo con confianza.
 
 ¡A jugar! 🐍
+
+---
+
+## ¿Y después de Serpiente?
+
+Cuando este tutorial te quede chico y quieras armar algo más
+ambicioso (scroll horizontal, parallax, múltiples enemigos con AI
+distinta, multinivel con palette swap), seguí con
+[DEVLOG-ROLLOX.md](DEVLOG-ROLLOX.md) — un blog donde se documenta
+el proceso evolutivo de escribir **ROLLOX**, un run-and-gun
+platformer en este mismo motor. No es un tutorial paso a paso sino
+una crónica de decisiones: qué primitivas usé, dónde el motor te
+deja solo, qué fallé, cómo lo resolví.

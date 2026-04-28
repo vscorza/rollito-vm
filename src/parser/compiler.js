@@ -251,6 +251,7 @@ function emitCall(ctx, ast) {
     case 'SIL': return emitFixed(ctx, ast, 1, OP.SIL);
 
     case 'CARNIV': return emitFixed(ctx, ast, 1, OP.CARNIV);
+    case 'PAL':    return emitFixed(ctx, ast, 1, OP.PAL);
 
     case 'STM':    return emitFixed(ctx, ast, 2, OP.STM);
     case 'STW':    return emitFixed(ctx, ast, 2, OP.STW);

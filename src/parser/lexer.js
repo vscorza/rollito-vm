@@ -36,7 +36,7 @@ export const BUILTINS = new Set([
   'SPR', 'SPRR', 'SPRA', 'MOV', 'VEL', 'ANI', 'OCU', 'INV', 'PAT',
   'MAP', 'FON', 'SOL', 'GRA', 'SAL', 'LIM',
   'SON', 'RUI', 'SIL',
-  'CARNIV',
+  'CARNIV', 'PAL',
   // Memory access (docs/PLAN.md §18).
   'STM', 'STW', 'STR', 'MEMCPY', 'MEMSET',
 ]);

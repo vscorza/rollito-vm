@@ -35,6 +35,7 @@ import {
 import { drawText } from '../builtins/text.js';
 import { DRAW_BUILTINS } from '../builtins/draw.js';
 import { playSound, playNoise, silenceChannel } from '../audio/synth.js';
+import { setActivePalette } from '../render/palette.js';
 import {
   MMIO_BASE, MMIO_END, MMIO_ARG0, MMIO_CMD, MMIO_RESULT, CMD,
 } from './mmio.js';
@@ -404,11 +405,16 @@ function dispatchMmioCmd(rvmState, vmState, vmRef, cmd) {
       silenceChannel(vmRef.synth, A[0]);
       return;
 
-    // -------------------- lifecycle --------------------
+    // -------------------- lifecycle / display --------------------
     case CMD.CARNIV:
       vmState.vars[VAR_INDEX.NIV] = A[0] | 0;
       vmState.pendingLevelLoad = true;
       return;
+    case CMD.PAL: {
+      const n = A[0] | 0;
+      if (n >= 0 && n < 4) setActivePalette(vmRef.bank, n);
+      return;
+    }
 
     // -------------------- queries (write to mmioResult) --------------
     case CMD.Q_X:
