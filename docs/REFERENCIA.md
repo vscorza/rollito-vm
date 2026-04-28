@@ -320,11 +320,15 @@ para tener varios actores con la misma imagen.
 ### `MAPA n WxH` (definición)
 Bloque de definición; ver §8.5 del plan.
 
-### `MAP n,x,y`
-Pinta el mapa `n` una vez en la posición indicada.
+### `MAP n,x,y[,a]`
+Pinta el mapa `n` una vez en la posición indicada. El 4to argumento
+opcional `a` (0..15) habilita alpha-blend sobre los tiles no-transparentes
+usando la misma `BLEND_TABLE` que `SPRA` (default = `(src+dst)/2`).
+`a=0` o ausente = pintado directo (sin blend).
 
 ```
 10 MAP 0,0,0                      ; 12
+20 MAP 1,T,16,4                   ; 14  ; parallax con fade
 ```
 
 ### `FON n`

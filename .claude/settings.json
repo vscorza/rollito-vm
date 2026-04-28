@@ -24,7 +24,16 @@
       "Bash(echo \"Configurado: $\\(git config user.name\\) <$\\(git config user.email\\)>\")",
       "Bash(gh repo *)",
       "Bash(awk '/^PROGRAMA$/{p=1;next} p && !/^[[:space:]]*;/ && NF{ s=$0; sub\\(/[[:space:]]*;.*$/,\"\",s\\); sub\\(/[[:space:]]+$/,\"\",s\\); print length\\(s\\)\"\\\\t\"s }' games/camaleon.retro)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(awk '/^export const OP = Object.freeze\\\\\\(\\\\{/,/^\\\\}\\\\\\);/' src/core/bytecode.js)",
+      "Bash(awk '/^export const OP = Object.freeze/,/^}\\\\\\);/' src/core/bytecode.js)",
+      "Bash(awk '{print $1}')",
+      "Bash(sed 's/:$//')",
+      "Bash(awk '/^SPRITE [0-9]+ 16x16/{slot=$2; row=0; next} /^[0-9A-Fa-f]+$/ && length\\($0\\)>0 && row<16 {if \\(length\\($0\\) != 16\\) print \"BAD: SPRITE \" slot \" row \" row \" has length \" length\\($0\\); row++} /^$/ {if \\(row>0 && row<16\\) print \"SHORT: SPRITE \" slot \" only \" row \" rows\"; row=0}' /Users/marianocerrutti/git_repo/rollito-vm/games/rollox.retro)",
+      "Bash(awk '/^SPRITE [0-9]+ \\([0-9]+\\)x\\([0-9]+\\)/{slot=$2; split\\($3,sz,\"x\"\\); w=sz[1]; h=sz[2]; row=0; in_sprite=1; next} /^[0-9A-Fa-f]+$/ && in_sprite && row<h {if \\(length\\($0\\) != w\\) print \"BAD: SPRITE \" slot \" \\(\" w \"x\" h \"\\) row \" row \" has length \" length\\($0\\); row++; if \\(row==h\\) in_sprite=0} /^$/ {if \\(in_sprite && row<h\\) print \"SHORT: SPRITE \" slot \" only \" row \"/\" h; in_sprite=0; row=0}' /Users/marianocerrutti/git_repo/rollito-vm/games/rollox.retro)"
+    ],
+    "additionalDirectories": [
+      "/Users/marianocerrutti/git_repo/rollito-vm/games"
     ]
   }
 }

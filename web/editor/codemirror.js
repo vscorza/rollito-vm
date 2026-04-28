@@ -105,3 +105,22 @@ export function insertAtCursor(view, text) {
   });
   view.focus();
 }
+
+export function replaceLines(view, startLine0, endLine0, text) {
+  const doc = view.state.doc;
+  const total = doc.lines;
+  const safeStart = Math.max(0, Math.min(startLine0, total - 1));
+  const from = doc.line(safeStart + 1).from;
+  let to;
+  if (endLine0 >= total) {
+    to = doc.length;
+  } else {
+    to = doc.line(endLine0 + 1).from;
+  }
+  const insert = (to < doc.length && !text.endsWith('\n')) ? text + '\n' : text;
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + insert.length },
+  });
+  view.focus();
+}

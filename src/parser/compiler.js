@@ -239,7 +239,7 @@ function emitCall(ctx, ast) {
     case 'INV': return emitInv(ctx, ast);
     case 'PAT': return emitFixed(ctx, ast, 2, OP.PAT);
 
-    case 'MAP': return emitFixed(ctx, ast, 3, OP.MAP_);
+    case 'MAP': return emitMap(ctx, ast);
     case 'FON': return emitFixed(ctx, ast, 1, OP.FON);
     case 'SOL': return emitSol(ctx, ast);
     case 'GRA': return emitFixed(ctx, ast, 3, OP.GRA);
@@ -303,6 +303,19 @@ function emitSpr(ctx, ast) {
   if (ast.args.length === 4) emitExpr(ctx, ast.args[3]);
   else emit(ctx, OP.LDI, 0);
   emit(ctx, OP.SPR);
+}
+
+// MAP n,x,y[,a]. 3 args = sin blend; 4to arg opcional = alpha 0..15.
+function emitMap(ctx, ast) {
+  if (ast.args.length !== 3 && ast.args.length !== 4) {
+    throw new Error(`MAP requiere 3 o 4 args, recibió ${ast.args.length}`);
+  }
+  emitExpr(ctx, ast.args[0]);
+  emitExpr(ctx, ast.args[1]);
+  emitExpr(ctx, ast.args[2]);
+  if (ast.args.length === 4) emitExpr(ctx, ast.args[3]);
+  else emit(ctx, OP.LDI, 0);
+  emit(ctx, OP.MAP_);
 }
 
 // INV n,X | INV n,Y. Eje codificado en el operand (0=X, 1=Y).

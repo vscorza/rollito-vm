@@ -152,6 +152,17 @@ body.docs-page {
   background: #000;
   border: 1px solid var(--bg-2);
 }
+.ide-zoom-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-dim, #aab);
+  align-self: stretch;
+}
+.ide-zoom-label select {
+  margin-left: auto;
+}
 .ide-hud {
   display: grid;
   grid-template-columns: auto 1fr;

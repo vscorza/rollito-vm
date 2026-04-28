@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   createMapState, setMap, setSolid, readTile, writeTile,
-  blitMap, prerenderMap, setActiveBackground,
+  blitMap, blitMapAlpha, prerenderMap, setActiveBackground,
   actorCollidesMap, actorOnGround,
 } from '../../src/core/maps.js';
+import { makeDefaultBlendTable } from '../../src/core/sprites.js';
 import {
   createSpriteState, ACTOR_FIELDS,
   F_X, F_Y, F_FLAGS, FLAG_HIDDEN,
@@ -107,6 +108,38 @@ describe('blitMap + prerenderMap', () => {
     setActiveBackground(ms, 0);
     expect(ms.activeBackground).toBe(0);
     expect(ms.maps[0].dirty).toBe(true);
+  });
+});
+
+describe('blitMapAlpha', () => {
+  it('alpha>0 mezcla via blendTable y respeta cell 0', () => {
+    const ms = createMapState();
+    const ss = createSpriteState();
+    ss.patterns[1] = makePattern(8, 8, 8);  // src color 8
+    setMap(ms, 0, 2, 1, new Uint8Array([0, 1]));
+    const fb = new Uint8Array(PIXELS);
+    fb.fill(2);  // dst color 2 en todo el FB
+    const bt = makeDefaultBlendTable();
+    blitMapAlpha(ms, 0, fb, 0, 0, 4, bt, ss.patterns);
+    // Cell 0 → no toca: pixel (0,0) sigue en 2.
+    expect(fb[0]).toBe(2);
+    // Cell 1 (col 1) → blend (8,2)/2 = 5.
+    expect(fb[8]).toBe(5);
+    expect(fb[7 * WIDTH + 15]).toBe(5);
+  });
+
+  it('cells fuera de la tabla de patrones se saltan', () => {
+    const ms = createMapState();
+    const ss = createSpriteState();
+    ss.patterns[1] = makePattern(8, 8, 6);
+    setMap(ms, 0, 2, 1, new Uint8Array([1, 5]));  // cell 5 = patrón vacío
+    const fb = new Uint8Array(PIXELS);
+    const bt = makeDefaultBlendTable();
+    blitMapAlpha(ms, 0, fb, 0, 0, 4, bt, ss.patterns);
+    // cell 1 pinta (blend con dst=0 → (6+0)/2 = 3).
+    expect(fb[0]).toBe(3);
+    // cell 5 sin patrón: nada en cols 8..15.
+    expect(fb[8]).toBe(0);
   });
 });
 

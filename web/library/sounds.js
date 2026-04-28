@@ -90,3 +90,99 @@ FIN
 export function buildSoundBlock(slot, sound) {
   return sound.block.replace('{n}', slot);
 }
+
+const NOTE_NAMES_VALID = new Set(['DO', 'RE', 'MI', 'FA', 'SOL', 'LA', 'SI']);
+
+export function listSoundBlocks(source) {
+  const lines = source.split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = stripComment(lines[i]).match(/^\s*SONIDO\s+(\d+)\s*$/i);
+    if (!m) continue;
+    out.push({ slot: parseInt(m[1], 10), startLine: i });
+  }
+  return out;
+}
+
+export function findSoundBlock(source, slot) {
+  const lines = source.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = stripComment(lines[i]).match(/^\s*SONIDO\s+(\d+)\s*$/i);
+    if (!m || parseInt(m[1], 10) !== slot) continue;
+    const def = {
+      wave: 'PUL',
+      pulseWidth: 8,
+      env: { a: 0, d: 2, s: 8, r: 2 },
+      steps: [],
+    };
+    let j = i + 1;
+    while (j < lines.length) {
+      const r = stripComment(lines[j]).trim();
+      j++;
+      if (r === '') continue;
+      if (/^FIN$/i.test(r)) {
+        return { slot, def, startLine: i, endLine: j };
+      }
+      const mw = r.match(/^ONDA\s+(TRI|SIE|PUL|SEN)$/i);
+      if (mw) { def.wave = mw[1].toUpperCase(); continue; }
+      const mp = r.match(/^PUL\s+(\d+)$/i);
+      if (mp) { def.pulseWidth = parseInt(mp[1], 10) & 0x0f; continue; }
+      const me = r.match(/^ENV\s+(\d+),\s*(\d+),\s*(\d+),\s*(\d+)$/i);
+      if (me) {
+        def.env = {
+          a: parseInt(me[1], 10) & 0x0f,
+          d: parseInt(me[2], 10) & 0x0f,
+          s: parseInt(me[3], 10) & 0x0f,
+          r: parseInt(me[4], 10) & 0x0f,
+        };
+        continue;
+      }
+      const mn = r.match(/^NOTA\s+([A-Za-z]+)(#|b)?(\d)\s+(\d+)$/i);
+      if (mn) {
+        const name = mn[1].toUpperCase();
+        if (!NOTE_NAMES_VALID.has(name)) return null;
+        def.steps.push({
+          type: 'note',
+          name,
+          acc: mn[2] || '',
+          octave: parseInt(mn[3], 10),
+          ticks: parseInt(mn[4], 10),
+        });
+        continue;
+      }
+      const ms = r.match(/^SIL\s+(\d+)$/i);
+      if (ms) {
+        def.steps.push({ type: 'silence', ticks: parseInt(ms[1], 10) });
+        continue;
+      }
+      return null;
+    }
+    return null;
+  }
+  return null;
+}
+
+export function formatSoundBlock(slot, def) {
+  const lines = [`SONIDO ${slot}`, `ONDA ${def.wave}`];
+  if (def.wave === 'PUL') lines.push(`PUL ${def.pulseWidth}`);
+  lines.push(`ENV ${def.env.a},${def.env.d},${def.env.s},${def.env.r}`);
+  for (const s of def.steps) {
+    if (s.type === 'silence') {
+      lines.push(`SIL ${s.ticks}`);
+    } else {
+      lines.push(`NOTA ${s.name}${s.acc}${s.octave} ${s.ticks}`);
+    }
+  }
+  lines.push('FIN');
+  return lines.join('\n') + '\n';
+}
+
+function stripComment(s) {
+  let inStr = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') inStr = !inStr;
+    else if (c === ';' && !inStr) return s.slice(0, i);
+  }
+  return s;
+}

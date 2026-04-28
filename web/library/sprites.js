@@ -144,3 +144,73 @@ export const SPRITE_DB = [
 export function buildSpriteBlock(slot, sprite) {
   return `SPRITE ${slot} ${sprite.width}x${sprite.height}\n${sprite.rows.join('\n')}\n`;
 }
+
+const HEX_DIGITS = '0123456789ABCDEF';
+
+export function listSpriteBlocks(source) {
+  const lines = source.split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = stripComment(lines[i]).match(/^\s*SPRITE\s+(\d+)\s+(\d+)x(\d+)\s*$/i);
+    if (!m) continue;
+    const slot = parseInt(m[1], 10);
+    const w = parseInt(m[2], 10);
+    const h = parseInt(m[3], 10);
+    if (!isValidSpriteSize(w, h)) continue;
+    out.push({ slot, w, h, startLine: i });
+  }
+  return out;
+}
+
+export function findSpriteBlock(source, slot) {
+  const lines = source.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = stripComment(lines[i]).match(/^\s*SPRITE\s+(\d+)\s+(\d+)x(\d+)\s*$/i);
+    if (!m || parseInt(m[1], 10) !== slot) continue;
+    const w = parseInt(m[2], 10);
+    const h = parseInt(m[3], 10);
+    if (!isValidSpriteSize(w, h)) return null;
+    const pixels = new Uint8Array(w * h);
+    let row = 0;
+    let j = i + 1;
+    while (j < lines.length && row < h) {
+      const r = stripComment(lines[j]).trim();
+      if (r === '') { j++; continue; }
+      if (r.length !== w || !/^[0-9A-Fa-f]+$/.test(r)) return null;
+      for (let c = 0; c < w; c++) {
+        pixels[row * w + c] = parseInt(r[c], 16) & 0x0f;
+      }
+      row++;
+      j++;
+    }
+    if (row !== h) return null;
+    return { slot, w, h, pixels, startLine: i, endLine: j };
+  }
+  return null;
+}
+
+export function formatSpriteBlock(slot, w, h, pixels) {
+  const lines = [`SPRITE ${slot} ${w}x${h}`];
+  for (let y = 0; y < h; y++) {
+    let row = '';
+    for (let x = 0; x < w; x++) {
+      row += HEX_DIGITS[pixels[y * w + x] & 0x0f];
+    }
+    lines.push(row);
+  }
+  return lines.join('\n') + '\n';
+}
+
+function isValidSpriteSize(w, h) {
+  return (w === 8 || w === 16) && (h === 8 || h === 16);
+}
+
+function stripComment(s) {
+  let inStr = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') inStr = !inStr;
+    else if (c === ';' && !inStr) return s.slice(0, i);
+  }
+  return s;
+}

@@ -1,5 +1,6 @@
 import { PALETTE_DB, findPaletteBlock } from '../library/palettes.js';
-import { insertAtCursor, getEditorDoc } from './codemirror.js';
+import { listSpriteBlocks, findSpriteBlock, formatSpriteBlock } from '../library/sprites.js';
+import { insertAtCursor, getEditorDoc, replaceLines } from './codemirror.js';
 
 // Editor visual de sprites. Modal con grilla pintable, paleta activa
 // (16 swatches), selector de tamaño 8x8 / 8x16 / 16x8 / 16x16,
@@ -12,8 +13,6 @@ const SIZES = [
   { w: 16, h: 16, label: '16x16' },
 ];
 
-const VALID_HEX_DIGITS = '0123456789ABCDEF';
-
 let dialog = null;
 let editorView = null;
 
@@ -22,6 +21,7 @@ let state = {
   pixels: new Uint8Array(8 * 8),
   activeColor: 1,
   palette: PALETTE_DB[0].colors.slice(),
+  loaded: null,
 };
 
 export function initSpriteEditor(view) {
@@ -37,7 +37,10 @@ export function openSpriteEditor() {
   setSize(8, 8);
   state.activeColor = 1;
   state.palette = PALETTE_DB[0].colors.slice();
+  state.loaded = null;
+  populateExisting();
   refreshAll();
+  refreshFooter();
   dialog.showModal();
 }
 
@@ -52,6 +55,11 @@ function buildDialog() {
       </header>
       <div class="ide-dialog-body">
         <div class="spr-toolbar">
+          <label>Cargar
+            <select id="spr-existing">
+              <option value="">— nuevo —</option>
+            </select>
+          </label>
           <label>Tamaño
             <select id="spr-size">
               ${SIZES.map((s, i) => `<option value="${i}">${s.label}</option>`).join('')}
@@ -88,6 +96,24 @@ function buildDialog() {
     </form>
   `;
 
+  dialog.querySelector('#spr-existing').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v === '') {
+      state.loaded = null;
+      refreshFooter();
+      return;
+    }
+    loadExistingSprite(parseInt(v, 10));
+  });
+  dialog.querySelector('#spr-slot').addEventListener('input', () => {
+    if (!state.loaded) return;
+    const cur = parseInt(dialog.querySelector('#spr-slot').value, 10);
+    if (cur !== state.loaded.slot) {
+      state.loaded = null;
+      dialog.querySelector('#spr-existing').value = '';
+      refreshFooter();
+    }
+  });
   dialog.querySelector('#spr-size').addEventListener('change', (e) => {
     const idx = parseInt(e.target.value, 10) | 0;
     setSize(SIZES[idx].w, SIZES[idx].h);
@@ -253,13 +279,47 @@ function flipY() {
 function doInsert() {
   if (!editorView) return;
   const slot = parseInt(dialog.querySelector('#spr-slot').value, 10);
-  const lines = [`SPRITE ${slot} ${state.w}x${state.h}`];
-  for (let y = 0; y < state.h; y++) {
-    let row = '';
-    for (let x = 0; x < state.w; x++) {
-      row += VALID_HEX_DIGITS[state.pixels[y * state.w + x] & 0x0f];
-    }
-    lines.push(row);
+  const text = formatSpriteBlock(slot, state.w, state.h, state.pixels);
+  if (state.loaded && state.loaded.slot === slot) {
+    replaceLines(editorView, state.loaded.startLine, state.loaded.endLine, text);
+  } else {
+    insertAtCursor(editorView, text);
   }
-  insertAtCursor(editorView, lines.join('\n') + '\n');
+}
+
+function populateExisting() {
+  const sel = dialog.querySelector('#spr-existing');
+  sel.innerHTML = '<option value="">— nuevo —</option>';
+  if (!editorView) return;
+  for (const blk of listSpriteBlocks(getEditorDoc(editorView))) {
+    const o = document.createElement('option');
+    o.value = String(blk.slot);
+    o.textContent = `SPRITE ${blk.slot} (${blk.w}x${blk.h})`;
+    sel.appendChild(o);
+  }
+}
+
+function loadExistingSprite(slot) {
+  if (!editorView) return;
+  const found = findSpriteBlock(getEditorDoc(editorView), slot);
+  if (!found) {
+    alert(`No se pudo leer SPRITE ${slot} del código.`);
+    dialog.querySelector('#spr-existing').value = '';
+    return;
+  }
+  state.w = found.w;
+  state.h = found.h;
+  state.pixels = found.pixels;
+  state.loaded = { slot: found.slot, startLine: found.startLine, endLine: found.endLine };
+  const sizeIdx = SIZES.findIndex((s) => s.w === found.w && s.h === found.h);
+  if (sizeIdx >= 0) dialog.querySelector('#spr-size').value = String(sizeIdx);
+  dialog.querySelector('#spr-slot').value = String(slot);
+  refreshGrid();
+  refreshPreview();
+  refreshFooter();
+}
+
+function refreshFooter() {
+  const btn = dialog.querySelector('button[value="default"]');
+  if (btn) btn.textContent = state.loaded ? 'Reemplazar bloque' : 'Insertar al cursor';
 }

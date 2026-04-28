@@ -45,6 +45,15 @@
     <main class="ide-main">
       <section id="editor" class="ide-editor"></section>
       <aside class="ide-canvas-pane">
+        <label class="ide-zoom-label">
+          Zoom
+          <select id="zoom-select">
+            <option value="auto">Ajustar</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+            <option value="8">8×</option>
+          </select>
+        </label>
         <canvas id="screen" width="320" height="200"></canvas>
         <dl id="hud" class="ide-hud">
           <dt>Estado</dt><dd id="hud-status">esperando ▶ Correr</dd>

@@ -1,5 +1,5 @@
 import { WIDTH, HEIGHT, PIXELS } from '../render/framebuffer.js';
-import { drawPattern } from './sprites.js';
+import { drawPattern, drawPatternAlpha } from './sprites.js';
 
 // Estado de mapas. Hasta 4 mapas (índice 0..3). Cada mapa tiene:
 //   - cols, rows         (dimensiones en celdas)
@@ -133,13 +133,52 @@ export function blitMap(mapState, mapIdx, fb, dx, dy, patterns) {
   resolveTileSize(m, patterns);
   if (m.tileW === 0) return;
   const tw = m.tileW, th = m.tileH;
-  for (let r = 0; r < m.rows; r++) {
-    for (let c = 0; c < m.cols; c++) {
-      const t = m.cells[r * m.cols + c];
+  const cStart = dx < 0 ? Math.max(0, ((-dx) / tw) | 0) : 0;
+  const cEndRaw = dx + m.cols * tw > WIDTH ? Math.ceil((WIDTH - dx) / tw) : m.cols;
+  const cEnd = cEndRaw < m.cols ? (cEndRaw < 0 ? 0 : cEndRaw) : m.cols;
+  if (cStart >= cEnd) return;
+  const rStart = dy < 0 ? Math.max(0, ((-dy) / th) | 0) : 0;
+  const rEndRaw = dy + m.rows * th > HEIGHT ? Math.ceil((HEIGHT - dy) / th) : m.rows;
+  const rEnd = rEndRaw < m.rows ? (rEndRaw < 0 ? 0 : rEndRaw) : m.rows;
+  if (rStart >= rEnd) return;
+  for (let r = rStart; r < rEnd; r++) {
+    const rowBase = r * m.cols;
+    const py = dy + r * th;
+    for (let c = cStart; c < cEnd; c++) {
+      const t = m.cells[rowBase + c];
       if (t === 0) continue;
       const pat = patterns[t];
       if (!pat) continue;
-      drawPattern(fb, pat, dx + c * tw, dy + r * th, false, false);
+      drawPattern(fb, pat, dx + c * tw, py, false, false);
+    }
+  }
+}
+
+// Variante alpha-blended (MAP n,x,y,a con a>0). Comparte el camino lento
+// de drawPatternAlpha → consulta blendTable por pixel no-transparente.
+export function blitMapAlpha(mapState, mapIdx, fb, dx, dy, alpha, blendTable, patterns) {
+  const m = mapState.maps[mapIdx];
+  if (!m) return;
+  resolveTileSize(m, patterns);
+  if (m.tileW === 0) return;
+  const tw = m.tileW, th = m.tileH;
+  const cStart = dx < 0 ? Math.max(0, ((-dx) / tw) | 0) : 0;
+  const cEndRaw = dx + m.cols * tw > WIDTH ? Math.ceil((WIDTH - dx) / tw) : m.cols;
+  const cEnd = cEndRaw < m.cols ? (cEndRaw < 0 ? 0 : cEndRaw) : m.cols;
+  if (cStart >= cEnd) return;
+  const rStart = dy < 0 ? Math.max(0, ((-dy) / th) | 0) : 0;
+  const rEndRaw = dy + m.rows * th > HEIGHT ? Math.ceil((HEIGHT - dy) / th) : m.rows;
+  const rEnd = rEndRaw < m.rows ? (rEndRaw < 0 ? 0 : rEndRaw) : m.rows;
+  if (rStart >= rEnd) return;
+  for (let r = rStart; r < rEnd; r++) {
+    const rowBase = r * m.cols;
+    const py = dy + r * th;
+    for (let c = cStart; c < cEnd; c++) {
+      const t = m.cells[rowBase + c];
+      if (t === 0) continue;
+      const pat = patterns[t];
+      if (!pat) continue;
+      drawPatternAlpha(fb, pat, dx + c * tw, py, alpha, blendTable);
     }
   }
 }

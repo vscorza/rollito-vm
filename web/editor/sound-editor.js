@@ -1,5 +1,6 @@
 import { createSynth, attachAudioContext, loadSound, playSound, silenceChannel } from '../../src/audio/synth.js';
-import { insertAtCursor } from './codemirror.js';
+import { listSoundBlocks, findSoundBlock, formatSoundBlock } from '../library/sounds.js';
+import { insertAtCursor, getEditorDoc, replaceLines } from './codemirror.js';
 
 // Editor visual de sonidos. Form para ONDA / PUL / ENV ADSR + lista
 // editable de NOTA/SIL. Play en vivo usando el mismo synth del VM.
@@ -26,7 +27,9 @@ export function initSoundEditor(view) {
 export function openSoundEditor() {
   if (!dialog) throw new Error('sound editor no inicializado');
   state = freshState();
+  populateExisting();
   refreshAll();
+  refreshFooter();
   dialog.showModal();
 }
 
@@ -40,6 +43,7 @@ function freshState() {
       { type: 'note', name: 'SOL', acc: '', octave: 5, ticks: 4 },
       { type: 'note', name: 'DO', acc: '', octave: 6, ticks: 6 },
     ],
+    loaded: null,
   };
 }
 
@@ -54,6 +58,11 @@ function buildDialog() {
       </header>
       <div class="ide-dialog-body">
         <div class="snd-toolbar">
+          <label>Cargar
+            <select id="snd-existing">
+              <option value="">— nuevo —</option>
+            </select>
+          </label>
           <label>Slot
             <input type="number" id="snd-slot" min="0" max="15" value="0" />
           </label>
@@ -96,6 +105,24 @@ function buildDialog() {
     </form>
   `;
 
+  dialog.querySelector('#snd-existing').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v === '') {
+      state.loaded = null;
+      refreshFooter();
+      return;
+    }
+    loadExistingSound(parseInt(v, 10));
+  });
+  dialog.querySelector('#snd-slot').addEventListener('input', () => {
+    if (!state.loaded) return;
+    const cur = parseInt(dialog.querySelector('#snd-slot').value, 10);
+    if (cur !== state.loaded.slot) {
+      state.loaded = null;
+      dialog.querySelector('#snd-existing').value = '';
+      refreshFooter();
+    }
+  });
   dialog.querySelector('#snd-wave').addEventListener('change', (e) => {
     state.wave = e.target.value;
     refreshPulEnable();
@@ -258,16 +285,50 @@ function stopPlay() {
 function doInsert() {
   if (!editorView) return;
   const slot = parseInt(dialog.querySelector('#snd-slot').value, 10);
-  const lines = [`SONIDO ${slot}`, `ONDA ${state.wave}`];
-  if (state.wave === 'PUL') lines.push(`PUL ${state.pulseWidth}`);
-  lines.push(`ENV ${state.env.a},${state.env.d},${state.env.s},${state.env.r}`);
-  for (const s of state.steps) {
-    if (s.type === 'silence') {
-      lines.push(`SIL ${s.ticks}`);
-    } else {
-      lines.push(`NOTA ${s.name}${s.acc}${s.octave} ${s.ticks}`);
-    }
+  const text = formatSoundBlock(slot, {
+    wave: state.wave,
+    pulseWidth: state.pulseWidth,
+    env: state.env,
+    steps: state.steps,
+  });
+  if (state.loaded && state.loaded.slot === slot) {
+    replaceLines(editorView, state.loaded.startLine, state.loaded.endLine, text);
+  } else {
+    insertAtCursor(editorView, text);
   }
-  lines.push('FIN');
-  insertAtCursor(editorView, lines.join('\n') + '\n');
+}
+
+function populateExisting() {
+  const sel = dialog.querySelector('#snd-existing');
+  sel.innerHTML = '<option value="">— nuevo —</option>';
+  if (!editorView) return;
+  for (const blk of listSoundBlocks(getEditorDoc(editorView))) {
+    const o = document.createElement('option');
+    o.value = String(blk.slot);
+    o.textContent = `SONIDO ${blk.slot}`;
+    sel.appendChild(o);
+  }
+}
+
+function loadExistingSound(slot) {
+  if (!editorView) return;
+  const found = findSoundBlock(getEditorDoc(editorView), slot);
+  if (!found) {
+    alert(`No se pudo leer SONIDO ${slot} del código.`);
+    dialog.querySelector('#snd-existing').value = '';
+    return;
+  }
+  state.wave = found.def.wave;
+  state.pulseWidth = found.def.pulseWidth;
+  state.env = { ...found.def.env };
+  state.steps = found.def.steps.map((s) => ({ ...s }));
+  state.loaded = { slot: found.slot, startLine: found.startLine, endLine: found.endLine };
+  dialog.querySelector('#snd-slot').value = String(slot);
+  refreshAll();
+  refreshFooter();
+}
+
+function refreshFooter() {
+  const btn = dialog.querySelector('button[value="default"]');
+  if (btn) btn.textContent = state.loaded ? 'Reemplazar bloque' : 'Insertar al cursor';
 }

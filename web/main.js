@@ -57,6 +57,30 @@ exampleSelect.addEventListener('change', () => {
 
 // --- Runner -----------------------------------------------------------
 const canvas = document.getElementById('screen');
+const zoomSelect = document.getElementById('zoom-select');
+const savedZoom = loadSetting('zoom') || 'auto';
+zoomSelect.value = savedZoom;
+applyZoom(savedZoom);
+zoomSelect.addEventListener('change', () => {
+  applyZoom(zoomSelect.value);
+  saveSetting('zoom', zoomSelect.value);
+});
+function applyZoom(v) {
+  const main = document.querySelector('.ide-main');
+  if (v === 'auto') {
+    canvas.style.width = '';
+    canvas.style.height = '';
+    canvas.style.maxWidth = '';
+    if (main) main.style.gridTemplateColumns = '';
+  } else {
+    const z = parseInt(v, 10) | 0;
+    canvas.style.width = (320 * z) + 'px';
+    canvas.style.height = (200 * z) + 'px';
+    canvas.style.maxWidth = 'none';
+    if (main) main.style.gridTemplateColumns = '1fr auto';
+  }
+}
+
 const hud = {
   status: document.getElementById('hud-status'),
   cua: document.getElementById('hud-cua'),

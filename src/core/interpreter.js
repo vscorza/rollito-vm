@@ -27,7 +27,7 @@ import {
   drawPattern, drawPatternAffine, drawPatternAlpha, aabbCollide, actorDistance,
 } from './sprites.js';
 import {
-  setSolid, blitMap, readTile, setActiveBackground,
+  setSolid, blitMap, blitMapAlpha, readTile, setActiveBackground,
   actorCollidesMap, actorOnGround,
 } from './maps.js';
 import { drawText } from '../builtins/text.js';
@@ -448,10 +448,15 @@ export function runFromBytecode(state, vmRef, code, constants, startPc) {
 
       // -------------------- mapas y físicas --------------------
       case OP.MAP_: {
+        const a = stack[--sp] & 0x0f;
         const yy = stack[--sp];
         const xx = stack[--sp];
         const n = stack[--sp] | 0;
-        blitMap(vmRef.mapState, n, vmRef.fb, xx, yy, vmRef.spriteState.patterns);
+        if (a === 0) {
+          blitMap(vmRef.mapState, n, vmRef.fb, xx, yy, vmRef.spriteState.patterns);
+        } else {
+          blitMapAlpha(vmRef.mapState, n, vmRef.fb, xx, yy, a, vmRef.blendTable, vmRef.spriteState.patterns);
+        }
         pc++; break;
       }
       case OP.FON: {
