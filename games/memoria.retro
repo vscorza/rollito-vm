@@ -1,37 +1,49 @@
 ; ===============================================
 ; memoria.retro — ejemplo canónico #4
-;   Grilla 4x4 de cartas; revelá pares iguales para puntuar.
-;   Cubre: arreglos M0..M2, cursor con BTN, debounce con M2,
-;   ALE para mezcla, TXT para título y score, REC para cartas.
-;   Controles: ← → ↑ ↓ mover cursor, Z revelar.
+;   Grilla 4x4 de cartas; revelá pares iguales.
+;   Cubre: arreglos M0..M2, cursor con BTN,
+;   debounce, ALE para mezcla, TXT/REC, paleta
+;   custom, HUD ondulante (triangular) abajo.
+;   Controles: ← → ↑ ↓ mover cursor;
+;              Z, X o ESPACIO revelan.
+;   Al ganar muestra "TE TOMO X INTENTOS"
+;   durante 3 segundos y reinicia.
 ; ===============================================
 
 JUEGO Memoria
 AUTOR Demo
 VERSION 1
 
+PALETA 0
+000000 1D2B53 7E2553 008751
+AB5236 5F574F C2C3C7 FFF1E8
+FF004D FFA300 FFEC27 00E436
+29ADFF 83769C FF77A8 FFCCAA
+
 PROGRAMA
 10 EN INICIOJUEGO IR 90
 20 EN CUADRO IR 100
 
-; --- INICIOJUEGO: arma 16 cartas (8 pares) ----
 90 LLA 700
 92 RET
 
-; --- CUADRO -----------------------------------
+; --- CUADRO ----------------------------------
+;   Si Z=1 (ganamos) salta a la pantalla de
+;   fin de nivel; en otro caso juega normal.
 100 BOR 0
+101 SI Z=1 ENT 140
 102 TXT 92,4,"MEMORIA",7
 105 LLA 220
-108 SI Z=1 ENT 115
 110 LLA 280
 115 LLA 500
 120 LLA 400
 125 LLA 460
-130 SI Z=0 ENT 145
-135 TXT 96,180,"GANASTE!",10
+128 LLA 800
+130 IR 145
+140 LLA 950
 145 RET
 
-; --- mover cursor (BTN 0..3 con debounce) ----
+; --- mover cursor (BTN 0..3) -----------------
 220 PAR I=0 A 3
 222 N=BTN(I)
 224 SI N=1 Y M2(I)=0 ENT LLA 240
@@ -53,12 +65,15 @@ PROGRAMA
 265 SI C<12 ENT C+=4
 267 RET
 
-; --- revelar carta (BTN 4 con debounce) ------
+; --- revelar (BTN 4 / BTN 5 / SPACE) ---------
+;   Combina 3 fuentes para descartar mapeos
+;   raros del editor; M2(4) hace el debounce.
 280 N=BTN(4)
-282 SI N<>1 O M2(4)=1 ENT 290
-284 LLA 350
-290 M2(4)=N
-292 RET
+281 SI N=0 ENT N=BTN(5)
+282 SI N=0 ENT N=TEC(32)
+283 SI N=1 Y M2(4)=0 ENT LLA 350
+284 M2(4)=N
+286 RET
 
 350 SI S=2 ENT 380
 355 SI M1(C)=1 ENT 380
@@ -69,14 +84,16 @@ PROGRAMA
 375 LLA 600
 380 RET
 
-; --- check de match ---------------------------
-600 SI M0(F)<>M0(C) ENT 615
+; --- check de match + intentos ---------------
+600 T+=1
+602 SI M0(F)<>M0(C) ENT 615
 605 PUN+=1:S=0
 610 SI PUN=8 ENT Z=1
 612 RET
-615 V=20:S=2:RET
+615 V=20:S=2
+617 RET
 
-; --- countdown durante "S=2 mostrando" --------
+; --- countdown durante S=2 -------------------
 500 SI S<>2 ENT 520
 505 V-=1
 510 SI V<=0 ENT LLA 540
@@ -85,7 +102,9 @@ PROGRAMA
 540 M1(F)=0:M1(C)=0:S=0
 545 RET
 
-; --- dibujar cartas ---------------------------
+; --- dibujar cartas --------------------------
+;   Hidden: damero gris 5/6 según (J+K)%2.
+;   Revelada: color 8+M0(I) + número de pareja.
 400 PAR I=0 A 15
 405 LLA 420
 410 SIG
@@ -95,12 +114,28 @@ PROGRAMA
 424 X=40+J*60
 425 Y=32+K*32
 427 SI M1(I)=1 ENT LLA 440
-430 REC X,Y,40,24,5
-432 RET
+430 W=5+(J+K)%2
+432 REC X,Y,40,24,W
+434 RET
 440 REC X,Y,40,24,8+M0(I)
-442 RET
+442 LLA 480
+444 RET
 
-; --- borde de cursor --------------------------
+; --- 480: dígito de pareja sobre la carta ----
+480 W=M0(I)+1
+481 X=40+J*60+18
+482 Y=32+K*32+8
+483 SI W=1 ENT TXT X,Y,"1",0
+484 SI W=2 ENT TXT X,Y,"2",0
+485 SI W=3 ENT TXT X,Y,"3",0
+486 SI W=4 ENT TXT X,Y,"4",0
+487 SI W=5 ENT TXT X,Y,"5",0
+488 SI W=6 ENT TXT X,Y,"6",0
+489 SI W=7 ENT TXT X,Y,"7",0
+490 SI W=8 ENT TXT X,Y,"8",0
+491 RET
+
+; --- borde de cursor -------------------------
 460 J=C%4
 462 K=C/4
 464 X=40+J*60
@@ -111,7 +146,72 @@ PROGRAMA
 473 REC X+39,Y,1,24,7
 475 RET
 
-; --- init: pares + shuffle + reset estado ----
+; --- 800: HUD ondulante en la base -----------
+;   "PUN:n INT:mm" se desliza horizontalmente
+;   y cada char ondula en triangular (sin SEN
+;   para conservar cosim v2-A ↔ RVM-32).
+800 R=CUA*4
+802 Q=R%480-160
+804 LLA 820
+806 RET
+
+; --- 820: dibuja cada carácter --------------
+820 P=CUA/4
+822 G=0:LLA 860
+823 TXT Q,Y,"P",10
+824 G=1:LLA 860
+825 TXT Q+8,Y,"U",10
+826 G=2:LLA 860
+827 TXT Q+16,Y,"N",10
+828 G=3:LLA 860
+829 TXT Q+24,Y,":",10
+830 G=4:LLA 860
+831 W=PUN:X=Q+32:LLA 1100
+832 G=5:LLA 860
+833 TXT Q+44,Y,"I",10
+834 G=6:LLA 860
+835 TXT Q+52,Y,"N",10
+836 G=7:LLA 860
+837 TXT Q+60,Y,"T",10
+838 G=8:LLA 860
+839 TXT Q+68,Y,":",10
+840 G=9:LLA 860
+841 W=T/10:X=Q+76:LLA 1100
+842 G=10:LLA 860
+843 W=T%10:X=Q+84:LLA 1100
+844 RET
+
+; --- 860: triangular Y para fase G ----------
+;   Y oscila 181..189 con período 16 cuadros
+;   y la fase G corre el inicio por carácter.
+860 H=(P+G)%16
+862 H=H-8
+864 H=ABS(H)-4
+866 Y=185+H
+868 RET
+
+; --- 950: pantalla "TE TOMO X INTENTOS" -----
+;   L cuenta cuadros desde el triunfo. A los
+;   180 (3 s a 60 fps) llama init y reinicia.
+950 L+=1
+951 LLA 970
+952 SI L>=180 ENT LLA 700
+953 RET
+
+; --- 970: render del mensaje al centro ------
+;   Centro horizontal según T (1 ó 2 dígitos).
+970 SI T>=10 ENT IR 980
+972 TXT 80,96,"TE TOMO",10
+974 W=T:X=144:Y=96:LLA 1100
+976 TXT 152,96,"INTENTOS",10
+978 RET
+980 TXT 76,96,"TE TOMO",10
+982 W=T/10:X=140:Y=96:LLA 1100
+984 W=T%10:X=148:Y=96:LLA 1100
+986 TXT 156,96,"INTENTOS",10
+988 RET
+
+; --- 700: init -------------------------------
 700 PAR I=0 A 15
 705 M0(I)=I/2
 710 SIG
@@ -125,5 +225,19 @@ PROGRAMA
 735 PAR I=0 A 15
 740 M1(I)=0
 745 SIG
-750 C=0:S=0:Z=0
+750 C=0:S=0:Z=0:T=0
+752 PUN=0:L=0
 755 RET
+
+; --- 1100: dibuja dígito W en X,Y, color 10 -
+1100 SI W=0 ENT TXT X,Y,"0",10
+1101 SI W=1 ENT TXT X,Y,"1",10
+1102 SI W=2 ENT TXT X,Y,"2",10
+1103 SI W=3 ENT TXT X,Y,"3",10
+1104 SI W=4 ENT TXT X,Y,"4",10
+1105 SI W=5 ENT TXT X,Y,"5",10
+1106 SI W=6 ENT TXT X,Y,"6",10
+1107 SI W=7 ENT TXT X,Y,"7",10
+1108 SI W=8 ENT TXT X,Y,"8",10
+1109 SI W=9 ENT TXT X,Y,"9",10
+1110 RET
